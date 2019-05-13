@@ -2,50 +2,32 @@ import numpy as np
 import pandas as pd
 import sys
 
-def ValMat(*Surveys, Export = True):
+def ValMat(*Surveys, DoMatch = True):
     NumSurveys = len(Surveys)
 
     PostFile = Surveys[-1]
     dfPost = pd.read_csv(PostFile, skiprows = [1, 2])
     dfPost = Validate(dfPost, 'POST')
     NValidPre = len(dfPost.index)
-
     if(NumSurveys >= 2):
         PreFile = Surveys[0]
         dfPre = pd.read_csv(PreFile, skiprows = [1, 2])
         dfPre = Validate(dfPre, 'PRE')
         NValidPre = len(dfPre.index)
-
         if(NumSurveys == 2):
-            dfPre, dfPost = Match(dfPre = dfPre, dfPost = dfPost)
-
-            if Export:
-                dfPre.to_csv(PreFile[:-4] + '_ValMat.csv', index = False)
-                dfPost.to_csv(PostFile[:-4] + '_ValMat.csv', index = False)
-
+            if(DoMatch == True):
+                dfPre, dfPost = Match(dfPre = dfPre, dfPost = dfPost) # Matching Pre and Post
             return NValidPre, NValidPost, dfPre, dfPost
-
         elif(NumSurveys == 3):
             MidFile = Surveys[1]
             dfMid = pd.read_csv(MidFile, skiprows = [1, 2])
             dfMid = Validate(dfMid, 'MID')
-            NValidPre = len(dfMid.index)
-
-            dfPre, dfMid, dfPost = Match(dfPre = dfPre, dfMid = dfMid, dfPost = dfPost)
-
-            if Export:
-                dfPre.to_csv(PreFile[:-4] + '_ValMat.csv', index = False)
-                dfMid.to_csv(MidFile[:-4] + '_ValMat.csv', index = False)
-                dfPost.to_csv(PostFile[:-4] + '_ValMat.csv', index = False)
-
-                return NValidPre, NValidMid, NValidPost, dfPre, dfMid, dfPost
+            NValidMid = len(dfMid.index)
+            if(DoMatch == True):
+                dfPre, dfMid, dfPost = Match(dfPre = dfPre, dfMid = dfMid, dfPost = dfPost) # Matching Pre, Mid, and Post
+            return NValidPre, NValidMid, NValidPost, dfPre, dfMid, dfPost
 
         else:
-            dfPost = dfPost.reset_index(drop = True)
-
-            if Export:
-                dfPost.to_csv(PostFile[:-4] + '_Valid.csv', index = False)
-
             return NValidPost, dfPost
 
 def Validate(df, Survey):
