@@ -1,21 +1,57 @@
+import os
 import numpy as np
 import pandas as pd
+import rpy2
+os.environ['R_HOME'] = 'C:\Program Files\R\R-3.5.0'
+os.environ['R_USER'] = 'C:\Anaconda3\Lib\site-packages\rpy2'
+os.environ['R_LIBS_USER'] = r'C:\Users\Cole\Documents\R\win-library\3.5'
+import rpy2.robjects as robjects
+from rpy2.robjects import pandas2ri
+pandas2ri.activate()
 
 def CalcScore(df, Weights):
 
     df = df.fillna(0)
-    Last_col = df.columns[-1]
 
-    for Q in ['Q1b', 'Q1d', 'Q1e', 'Q2b', 'Q2d', 'Q2e', 'Q3b', 'Q3d', 'Q3e', 'Q4b']:
+    for Q in ['Q1b', 'Q1d', 'Q1e', 'Q2b', 'Q2d', 'Q2e', 'Q3b', 'Q3d', 'Q3e', 'Q4b']: # Loop over questions
 
-        Items = [c for c in Weights.index if Q in c]
-        df_Q = df[Items].astype(str).apply(lambda x: x.str.replace('^(?!0).*$', '1')).astype(float)
-        Q_Weights = Weights[Items]
-        Ordered_Weights = Q_Weights.nlargest(3)
-        NumSelectedSeries = df_Q.sum(axis = 1).clip(upper = 3).map({0:1, 1:Ordered_Weights[0], 2:Ordered_Weights[:-1].sum(), 3:Ordered_Weights.sum()})
+        Items = [c for c in Weights.index if Q in c] # Get response choices for question
+        df_Q = df[Items].astype(str).apply(lambda x: x.str.replace('^(?!0).*$', '1')).astype(float) # Not useful for future surveys, but used to replace FR codes when coders used alternaive codes not 1
+        Q_Weights = Weights[Items] # Pull response choice weights from Weights vector
+        Ordered_Weights = Q_Weights.nlargest(3) # Get the three largest weights, sorted
+        NumSelectedSeries = df_Q.sum(axis = 1).clip(upper = 3).map({0:1, 1:Ordered_Weights[0], 2:Ordered_Weights[:-1].sum(), 3:Ordered_Weights.sum()}) # Get normalizations for each student, mapping number of selected items
 
-        df[Q.upper() + 's'] = (df_Q * Q_Weights).sum(axis = 1) / NumSelectedSeries
+        df[Q.upper() + 's'] = (df_Q * Q_Weights).sum(axis = 1) / NumSelectedSeries # Normalized scores for each student on the question
 
-    df['TotalScores'] = df.loc[:, 'Q1Bs':].sum(axis = 1).astype(float)
+    df['TotalScores'] = df.loc[:, 'Q1Bs':].sum(axis = 1).astype(float) # Get total score
 
     return df
+
+def CalcFactorScores(df_Cumulative, df_Your):
+    Question_Scores = ['Q1Bs', 'Q1Ds', 'Q1Es', 'Q2Bs', 'Q2Ds', 'Q2Es', 'Q3Bs', 'Q3Ds', 'Q3Es', 'Q4Bs']
+    df_Cumulative = df_Cumulative.loc[:, Question_Scores]
+    df_Your = df_Your.loc[:, Question_Scores]
+    robjects.importr('lavaan')
+
+    # Perform CFA in R to get factor scores
+    CFA_func = robjects.r('''
+        function(MainData, NewData = NULL){
+            PLIC.model.HYP <- ' models  =~ Q1Bs_x + Q2Bs_x + Q3Bs_x + Q3Ds_x
+                                methods =~ Q1Ds_x + Q2Ds_x + Q4Bs_x
+                                actions =~ Q1Es_x + Q2Es_x + Q3Es_x '
+
+            mod.cfa.HYP <- cfa(PLIC.model.HYP, data = MainData, std.lv = TRUE, estimator = 'ML')
+
+            if(is.null(NewData)){
+                scores.df <- data.frame(lavPredict(mod.cfa.HYP))
+            }else{
+                scores.df <- data.frame(lavPredict(mod.cfa.HYP, newdata = NewData))
+            }
+        }
+    ''')
+
+    # Convert dataframes back to python pandas dataframes
+    # df_Cumulative_Scores = pandas2ri.ri2py_dataframe(CFA_func(df_Cumulative))
+    df_Your_Scores = pandas2ri.ri2py_dataframe(CFA_func(df_Cumulative, df_Your))
+
+    return df_Your_Scores
