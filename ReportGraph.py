@@ -210,31 +210,85 @@ def GenerateGraph1(YourPostFile, OtherPreFile, OtherPostFile, Level, Where = 'Lo
 
 def GenerateGraph2(OtherPreFile, OtherPostFile, Level, Where = 'Local', **Surveys):
 
+    dfOther_Pre = pd.read_csv(OtherPreFile)
+    dfOther_PreS = Scoring.CalcScore(dfOther_Pre)
+
+    dfOther_Post = pd.read_csv(OtherPostFile)
+    dfOther_PostS = Scoring.CalcScore(dfOther_Post)
+
+    dfOtherS = pd.concat([dfOther_PreS, dfOther_PostS], axis = 0, join = 'inner') # Collect all data together for CFA model building
+
     Survey1 = list(Surveys.keys())[0]
     YourPreFile = list(Surveys.values())[0]
     YourPostFile = list(Surveys.values())[1]
 
     NValidPre, NValidPost, dfYour_Pre, dfYour_Post = Valid_Matched.ValMat(YourPreFile, YourPostFile, Where = Where)
 
-    if(Where == 'Local'):
-        dfOther_Pre = pd.read_csv(OtherPreFile)
-        dfOther_Post = pd.read_csv(OtherPostFile)
-    else:
-        dfOther_Pre = pd.read_csv(OtherPreFile)
-        dfOther_Post = pd.read_csv(OtherPostFile)
+    dfYour_PreS = Scoring.CalcScore(dfYour_Pre).loc[:, 'Q1Bs':]
+    dfYour_PreS.assign(Survey = 'PRE', Data = 'Yours')
 
-    dfOther_Pre_Type = dfOther_Pre[dfOther_Pre['Course_Level'] == Level].reset_index()
-    dfOther_Post_Type = dfOther_Post[dfOther_Post['Course_Level'] == Level].reset_index()
+    dfYour_PostS = Scoring.CalcScore(dfYour_Post).loc[:, 'Q1Bs':]
+    dfYour_PostS.assign(Survey = 'POST', Data = 'Yours')
+
+    dfOther_PreS_Level = dfOther_PreS[dfOther_PreS['Course_Level'] == Level].reset_index()
+    dfOther_PreS.assign(Survey = 'PRE', Data = 'Other')
+
+    dfOther_PostS_Level = dfOther_PostS[dfOther_PostS['Course_Level'] == Level].reset_index()
+    dfOther_PostS.assign(Survey = 'POST', Data = 'Other')
+
+    df_Concat = pd.concat([dfYour_PreS, dfYour_PostS, dfOther_PreS_Level, dfOther_PostS_Level], axis = 0, join = 'inner').loc[:, 'Q1Bs':] # Collect all data to be plotted into one dataframe
+
+    df_Factors = Scoring.CalcFactorScores(dfOtherS, df_Concat) # Get factor scores for yours and other classes
+    df_Concat = pd.concat([df_Concat, df_Factors], axis = 1, join = 'inner')
+
+    GenerateTotalScoresGraph(df_Concat)
+
+def GenerateTotalScoresGraph(df): # Generate main total scores graph that includes factor scores in a 2x2 layout
+
+    matplotlib.rcParams.update({'font.size': 16, 'font.family': "sans-serif", 'font.sans-serif': "Arial"})
+    fig, axes = plt.subplots(2, 2, figsize = (12, 9))
+
+    plt.sca(axes[0, 0])
+    sns.boxplot(x = 'Data', y = 'models', hue = 'Survey', data = df, linewidth = 0.5)
+    plt.xticks((0, 1), ('Your Class', 'Other Classes'), rotation = 40)
+    plt.ylabel('Score')
+    plt.text(0.5, 1.1, 'Evaluating models scale', ha = 'center', va = 'center')
+
+    plt.sca(axes[0, 1])
+    sns.boxplot(x = 'Data', y = 'methods', hue = 'Survey', data = df, linewidth = 0.5)
+    plt.xticks((0, 1), ('Your Class', 'Other Classes'), rotation = 40)
+    plt.ylabel('Score')
+    plt.text(0.5, 1.1, 'Evaluating methods scale', ha = 'center', va = 'center')
+
+    plt.sca(axes[1, 0])
+    sns.boxplot(x = 'Data', y = 'models', hue = 'Survey', data = df, linewidth = 0.5)
+    plt.xticks((0, 1), ('Your Class', 'Other Classes'), rotation = 40)
+    plt.ylabel('Score')
+    plt.text(0.5, 1.1, 'Suggesting follow-ups scale', ha = 'center', va = 'center')
+
+    plt.sca(axes[1, 1])
+    sns.boxplot(x = 'Data', y = 'TotalScores', hue = 'Survey', data = df, linewidth = 0.5)
+    plt.xticks((0, 1), ('Your Class', 'Other Classes'), rotation = 40)
+    plt.ylabel('Score')
+    plt.text(0.5, 1.1, 'Total Scores', ha = 'center', va = 'center')
+
+    plt.tight_layout()
+    fig.savefig('C:/PLIC/TotalScores.png')
+    plt.close()
+    plt.clf()
+
+def GenerateQuestionsGraph(df):
+
+    matplotlib.rcParams.update({'font.size': 16, 'font.family': "sans-serif", 'font.sans-serif': "Arial"})
+    fig, axes = plt.subplots(1, 2, figsize = (18, 18))
+
+     
+
 
     if(len(dfOther_Post_Type.index) >= len(dfYour_Post.index)):
         dfOther_PreS = Scoring.CalcScore(dfOther_Pre_Type)
         dfOther_PostS = Scoring.CalcScore(dfOther_Post_Type)
     else:
-        dfOther_PreS = Scoring.CalcScore(dfOther_Pre)
-        dfOther_PostS = Scoring.CalcScore(dfOther_Post)
-
-    dfYour_PreS = Scoring.CalcScore(dfYour_Pre)
-    dfYour_PostS = Scoring.CalcScore(dfYour_Post)
 
     OtherPreAvg = (dfOther_PreS.loc[:, 'Q1Bs':'Q4Bs']).mean(axis = 0)
     OtherPostAvg = (dfOther_PostS.loc[:, 'Q1Bs':'Q4Bs']).mean(axis = 0)
