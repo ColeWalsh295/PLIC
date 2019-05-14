@@ -32,6 +32,7 @@ def CalcFactorScores(df_Cumulative, df_Your):
     df_Cumulative = df_Cumulative.loc[:, Question_Scores]
     df_Your = df_Your.loc[:, Question_Scores]
     robjects.importr('lavaan')
+    robjects.importr('semPlot')
 
     # Perform CFA in R to get factor scores
     CFA_func = robjects.r('''
@@ -41,6 +42,10 @@ def CalcFactorScores(df_Cumulative, df_Your):
                                 actions =~ Q1Es_x + Q2Es_x + Q3Es_x '
 
             mod.cfa.HYP <- cfa(PLIC.model.HYP, data = MainData, std.lv = TRUE, estimator = 'ML')
+
+            semPaths(mod.cfa.HYP, what = 'diagram', whatLabels = 'stand', layout = 'tree2', residuals = FALSE, nCharNodes = 10, edge.color = 'black', edge.label.cex = 1,
+            nodeLabels = c('Q1B', 'Q2B', 'Q3B', 'Q3D', 'Q1D', 'Q2D', 'Q4B', 'Q1E', 'Q2E', 'Q3E', 'Evaluate\nModels', 'Evaluate\nMethods', 'Suggest\nFollow-ups'),
+            rotation = 2, sizeMan = 6, sizeLat = 10, width = 4, height = 5, filetype = 'png', mar = c(1, 3, 1, 1))
 
             if(is.null(NewData)){
                 scores.df <- data.frame(lavPredict(mod.cfa.HYP))
