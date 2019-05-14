@@ -3,12 +3,13 @@ import pandas as pd
 import sys
 
 def ValMat(*Surveys, DoMatch = True):
+    global NumSurveys
     NumSurveys = len(Surveys)
 
     PostFile = Surveys[-1]
     dfPost = pd.read_csv(PostFile, skiprows = [1, 2])
     dfPost = Validate(dfPost, 'POST')
-    NValidPre = len(dfPost.index)
+    NValidPost = len(dfPost.index)
     if(NumSurveys >= 2):
         PreFile = Surveys[0]
         dfPre = pd.read_csv(PreFile, skiprows = [1, 2])
@@ -27,8 +28,8 @@ def ValMat(*Surveys, DoMatch = True):
                 dfPre, dfMid, dfPost = Match(dfPre = dfPre, dfMid = dfMid, dfPost = dfPost) # Matching Pre, Mid, and Post
             return NValidPre, NValidMid, NValidPost, dfPre, dfMid, dfPost
 
-        else:
-            return NValidPost, dfPost
+    else:
+        return NValidPost, dfPost
 
 def Validate(df, Survey):
     if(Survey == 'POST'):
@@ -122,3 +123,5 @@ def ProcessNames(df):
         df['BackName'] = (df['Q5c'].apply(str).str.lower() + df['Q5b'].apply(str).str.lower()).str.replace('\W', '') # Get reverse full name in lower case with no white space
         df = df[df['FullName'].map(len) > 2] # Keep only full names with more than 2 characters
         df = df.drop_duplicates(subset = ['FullName']).drop_duplicates(subset = ['Q5a']) # Drop second entry if there are duplicate full names
+
+        return df

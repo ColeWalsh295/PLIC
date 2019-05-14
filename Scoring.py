@@ -8,9 +8,9 @@ os.environ['R_LIBS_USER'] = r'C:\Users\Cole\Documents\R\win-library\3.5'
 import rpy2.robjects as robjects
 from rpy2.robjects import pandas2ri
 pandas2ri.activate()
+from rpy2.robjects.packages import importr
 
 def CalcScore(df, Weights):
-
     df = df.fillna(0)
 
     for Q in ['Q1b', 'Q1d', 'Q1e', 'Q2b', 'Q2d', 'Q2e', 'Q3b', 'Q3d', 'Q3e', 'Q4b']: # Loop over questions
@@ -31,15 +31,16 @@ def CalcFactorScores(df_Cumulative, df_Your):
     Question_Scores = ['Q1Bs', 'Q1Ds', 'Q1Es', 'Q2Bs', 'Q2Ds', 'Q2Es', 'Q3Bs', 'Q3Ds', 'Q3Es', 'Q4Bs']
     df_Cumulative = df_Cumulative.loc[:, Question_Scores]
     df_Your = df_Your.loc[:, Question_Scores]
-    robjects.importr('lavaan')
-    robjects.importr('semPlot')
+    importr('lavaan')
+    importr('semPlot')
+    gr = importr('grDevices')
 
     # Perform CFA in R to get factor scores
     CFA_func = robjects.r('''
         function(MainData, NewData = NULL){
-            PLIC.model.HYP <- ' models  =~ Q1Bs_x + Q2Bs_x + Q3Bs_x + Q3Ds_x
-                                methods =~ Q1Ds_x + Q2Ds_x + Q4Bs_x
-                                actions =~ Q1Es_x + Q2Es_x + Q3Es_x '
+            PLIC.model.HYP <- ' models  =~ Q1Bs + Q2Bs + Q3Bs + Q3Ds
+                                methods =~ Q1Ds + Q2Ds + Q4Bs
+                                actions =~ Q1Es + Q2Es + Q3Es '
 
             mod.cfa.HYP <- cfa(PLIC.model.HYP, data = MainData, std.lv = TRUE, estimator = 'ML')
 
@@ -58,5 +59,6 @@ def CalcFactorScores(df_Cumulative, df_Your):
     # Convert dataframes back to python pandas dataframes
     # df_Cumulative_Scores = pandas2ri.ri2py_dataframe(CFA_func(df_Cumulative))
     df_Your_Scores = pandas2ri.ri2py_dataframe(CFA_func(df_Cumulative, df_Your))
+    gr.dev_off()
 
     return df_Your_Scores
