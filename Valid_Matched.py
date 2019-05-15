@@ -7,12 +7,12 @@ def ValMat(*Surveys, DoMatch = True):
     NumSurveys = len(Surveys)
 
     PostFile = Surveys[-1]
-    dfPost = pd.read_csv(PostFile, skiprows = [1, 2])
+    dfPost = pd.read_csv(PostFile, skiprows = [1])
     dfPost = Validate(dfPost, 'POST')
     NValidPost = len(dfPost.index)
     if(NumSurveys >= 2):
         PreFile = Surveys[0]
-        dfPre = pd.read_csv(PreFile, skiprows = [1, 2])
+        dfPre = pd.read_csv(PreFile, skiprows = [1])
         dfPre = Validate(dfPre, 'PRE')
         NValidPre = len(dfPre.index)
         if(NumSurveys == 2):
@@ -21,7 +21,7 @@ def ValMat(*Surveys, DoMatch = True):
             return NValidPre, NValidPost, dfPre, dfPost
         elif(NumSurveys == 3):
             MidFile = Surveys[1]
-            dfMid = pd.read_csv(MidFile, skiprows = [1, 2])
+            dfMid = pd.read_csv(MidFile, skiprows = [1])
             dfMid = Validate(dfMid, 'MID')
             NValidMid = len(dfMid.index)
             if(DoMatch == True):
@@ -33,9 +33,11 @@ def ValMat(*Surveys, DoMatch = True):
 
 def Validate(df, Survey):
     if(Survey == 'POST'):
-        df = df[(df['Finished'] == 1) & (df['Unnamed: 8'] == 1) & (df['Q6d'] == 2)] # Drop students who are not consenting, did not finish, or are not at least 18 at Post
+        # df = df[(df['Finished'] == 1) & (df['Unnamed: 8'] == 1) & (df['Q6d'] == 2)] # Drop students who are not consenting, did not finish, or are not at least 18 at Post
+        df = df[(df['V5'] == 1) & (df['Unnamed: 7'] == 1) & (df['Q6d'] == 2)]
     else:
-        df = df[(df['Finished'] == 1)] # Drop students who did not finish the pre/mid survey
+        # df = df[(df['Finished'] == 1)] # Drop students who did not finish the pre/mid survey
+        df = df[(df['V5'] == 1)]
     df = df.dropna(how = 'all', subset = ['Q5a', 'Q5b', 'Q5c']) # Drop students who did not provide any id or first/last name
     df = df[(df['Qt1_3'] >= 30) | (df['Qt2_3'] >= 30) | (df['Qt3_3'] >= 30) | (df['Qt4_3'] >= 30)] # Drop students who do not spend at least 30s on one page
 

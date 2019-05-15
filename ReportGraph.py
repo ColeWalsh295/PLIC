@@ -10,7 +10,7 @@ import Valid_Matched
 import Scoring
 
 def GenerateGraph(OtherPreFile, OtherPostFile, Level, Weightsdf, **Surveys):
-    global NValidPost, N_Other
+    global NValidPost, N_Other, dfYour_Post
 
     dfOther_Pre = pd.read_csv(OtherPreFile)
     dfOther_PreS = Scoring.CalcScore(dfOther_Pre, Weightsdf)
@@ -67,11 +67,11 @@ def GenerateGraph(OtherPreFile, OtherPostFile, Level, Weightsdf, **Surveys):
     if('PRE' in Surveys.keys()):
         dfYour_Pre['Course_Level'] = Level # Append the new pre data to the historical data for future use
         dfOther_Pre = pd.concat([dfOther_Pre, dfYour_Pre], join = 'inner', axis = 0)
-        #dfOther_Pre.to_csv('C:/PLIC/PreSurveys_ValMat.csv', index = False)
+        #dfOther_Pre.to_csv('PreSurveys_ValMat.csv', index = False)
 
         dfYour_Post['Course_Level'] = Level # Append the new post data to the historical data for future use
         dfOther_Post = pd.concat([dfOther_Post, dfYour_Post], join = 'inner', axis = 0)
-        #dfOther_Post.to_csv('C:/PLIC/PostSurveys_ValMat.csv', index = False)
+        #dfOther_Post.to_csv('PostSurveys_ValMat.csv', index = False)
 
         if('MID' in Surveys.keys()):
             return NValidPre, NValidMid, NValidPost, dfYour_Pre, dfYour_Mid, dfYour_Post
@@ -87,7 +87,7 @@ def GenerateTotalScoresGraph(df): # Generate main total scores graph that includ
     fig, axes = plt.subplots(2, 2, figsize = (12, 9))
 
     y_max = df.loc[:, 'models':].apply(max)
-    if('MID' in df['Survey']): # Indicate order of surveys based on whether to include a mid survey level
+    if('MID' in list(df['Survey'])): # Indicate order of surveys based on whether to include a mid survey level
         Survey_order = ['PRE', 'MID', 'POST']
     else:
         Survey_order = ['PRE', 'POST']
@@ -143,14 +143,14 @@ def GenerateQuestionsGraph(df):
     plt.xlabel('Score')
     plt.ylabel('Question')
     plt.yticks(range(10), ('Q1B', 'Q1D', 'Q1E', 'Q2B', 'Q2D', 'Q2E', 'Q3B', 'Q3D', 'Q3E', 'Q4B'))
-    plt.title('Your Class (N = {0})'.format(NValidPost))
+    plt.title('Your Class (N = {0})'.format(len(dfYour_Post.index)))
 
     plt.sca(axes[1])
     sns.boxplot(x = 'value', y = 'variable', hue = 'Survey', data = dfOther, linewidth = 0.5, palette = {'PRE':'#ece7f2', 'POST':'#2b8cbe'})
     plt.xlabel('Score')
     plt.title('Similar Classes (N = {0})'.format(N_Other))
 
-    if('PRE' in dfYours['Survey']): # Get legend from axes that has the most bars
+    if('PRE' in list(dfYours['Survey'])): # Get legend from axes that has the most bars
         axes[0].legend(bbox_to_anchor = (-0.08, 1.05))
         axes[1].legend().remove()
     else:
