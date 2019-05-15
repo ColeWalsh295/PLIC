@@ -27,8 +27,8 @@ def GenerateGraph(OtherPreFile, OtherPostFile, Level, Weightsdf, **Surveys):
     dfOther_PostS_Level = dfOther_PostS[dfOther_PostS['Course_Level'] == Level].reset_index(drop = True) # Filter out post cumulative data by course level
     dfOther_PostS_Level = dfOther_PostS_Level.assign(Survey = 'POST', Data = 'Other')
 
-    if('MID' in list(Surveys.keys())):
-        NValidPre, NValidMid, NValidPost, dfYour_Pre, dfYour_Mid, dfYour_Post = Valid_Matched.ValMat(YourPreFile, YourMidFile, YourPostFile)
+    if('MID' in Surveys.keys()): # Build class dataframe when 3 surveys are given
+        NValidPre, NValidMid, NValidPost, dfYour_Pre, dfYour_Mid, dfYour_Post = Valid_Matched.ValMat(Surveys['PRE'], Surveys['MID'], Surveys['POST'])
 
         dfYour_PreS = Scoring.CalcScore(dfYour_Pre, Weightsdf).loc[:, 'Q1Bs':]
         dfYour_PreS = dfYour_PreS.assign(Survey = 'PRE', Data = 'Yours')
@@ -40,8 +40,8 @@ def GenerateGraph(OtherPreFile, OtherPostFile, Level, Weightsdf, **Surveys):
         dfYour_PostS = dfYour_PostS.assign(Survey = 'POST', Data = 'Yours')
 
         df_Concat = pd.concat([dfYour_PreS, dfYour_MidS, dfYour_PostS, dfOther_PreS_Level, dfOther_PostS_Level], axis = 0, join = 'inner').reset_index(drop = True) # Collect all data to be plotted into one dataframe
-    elif('PRE' in list(Surveys.keys())):
-        NValidPre, NValidPost, dfYour_Pre, dfYour_Post = Valid_Matched.ValMat(YourPreFile, YourPostFile)
+    elif('PRE' in Surveys.keys()): # Build class dataframe when 2 surveys are given
+        NValidPre, NValidPost, dfYour_Pre, dfYour_Post = Valid_Matched.ValMat(Surveys['PRE'], Surveys['POST'])
 
         dfYour_PreS = Scoring.CalcScore(dfYour_Pre, Weightsdf).loc[:, 'Q1Bs':]
         dfYour_PreS = dfYour_PreS.assign(Survey = 'PRE', Data = 'Yours')
@@ -50,9 +50,8 @@ def GenerateGraph(OtherPreFile, OtherPostFile, Level, Weightsdf, **Surveys):
         dfYour_PostS = dfYour_PostS.assign(Survey = 'POST', Data = 'Yours')
 
         df_Concat = pd.concat([dfYour_PreS, dfYour_PostS, dfOther_PreS_Level, dfOther_PostS_Level], axis = 0, join = 'inner').reset_index(drop = True) # Collect all data to be plotted into one dataframe
-    else:
-        YourPostFile = Surveys['POST']
-        NValidPost, dfYour_Post = Valid_Matched.ValMat(YourPostFile)
+    else: # Build class dataframe when only 1 survey is given
+        NValidPost, dfYour_Post = Valid_Matched.ValMat(Surveys['POST'])
 
         dfYour_PostS = Scoring.CalcScore(dfYour_Post, Weightsdf).loc[:, 'Q1Bs':]
         dfYour_PostS = dfYour_PostS.assign(Survey = 'POST', Data = 'Yours')
@@ -60,25 +59,24 @@ def GenerateGraph(OtherPreFile, OtherPostFile, Level, Weightsdf, **Surveys):
         df_Concat = pd.concat([dfYour_PostS, dfOther_PreS_Level, dfOther_PostS_Level], axis = 0, join = 'inner').reset_index(drop = True) # Collect all data to be plotted into one dataframe
 
     df_Factors = Scoring.CalcFactorScores(dfOtherS, df_Concat) # Get factor scores for yours and other classes
-    df_Concat = pd.concat([df_Concat, df_Factors], axis = 1, join = 'inner')
+    df_Concat = pd.concat([df_Concat, df_Factors], axis = 1, join = 'inner') # Merge the factor scores back with the question scores dataframe for yours and other classes
 
     GenerateTotalScoresGraph(df_Concat)
     GenerateQuestionsGraph(df_Concat)
 
-    dfYour_Post['Course_Level'] = Level
-    dfOther_Post = pd.concat([dfOther_Post, dfYour_Post], join = 'inner', axis = 0)
-    #dfOther_Post.to_csv('C:/PLIC/PostSurveys_ValMat.csv', index = False)
-
-    if('MID' in list(Surveys.keys())):
-        dfYour_Pre['Course_Level'] = Level
+    if('PRE' in Surveys.keys()):
+        dfYour_Pre['Course_Level'] = Level # Append the new pre data to the historical data for future use
         dfOther_Pre = pd.concat([dfOther_Pre, dfYour_Pre], join = 'inner', axis = 0)
         #dfOther_Pre.to_csv('C:/PLIC/PreSurveys_ValMat.csv', index = False)
-        return NValidPre, NValidMid, NValidPost, dfYour_Pre, dfYour_Mid, dfYour_Post
-    elif('PRE' in list(Surveys.keys())):
-        dfYour_Pre['Course_Level'] = Level
-        dfOther_Pre = pd.concat([dfOther_Pre, dfYour_Pre], join = 'inner', axis = 0)
-        #dfOther_Pre.to_csv('C:/PLIC/PreSurveys_ValMat.csv', index = False)    
-        return NValidPre, NValidPost, dfYour_Pre, dfYour_Post
+
+        dfYour_Post['Course_Level'] = Level # Append the new post data to the historical data for future use
+        dfOther_Post = pd.concat([dfOther_Post, dfYour_Post], join = 'inner', axis = 0)
+        #dfOther_Post.to_csv('C:/PLIC/PostSurveys_ValMat.csv', index = False)
+
+        if('MID' in Surveys.keys()):
+            return NValidPre, NValidMid, NValidPost, dfYour_Pre, dfYour_Mid, dfYour_Post
+        else:
+            return NValidPre, NValidPost, dfYour_Pre, dfYour_Post
     else:
         return NValidPost, dfYour_Post
 
@@ -137,7 +135,7 @@ def GenerateQuestionsGraph(df):
     fig, axes = plt.subplots(1, 2, figsize = (12, 9))
 
     plt.sca(axes[0])
-    sns.boxplot(x = 'value', y = 'variable', hue = 'Survey', data = dfYours, linewidth = 0.5)
+    sns.boxplot(x = 'value', y = 'variable', hue = 'Survey', data = dfYours, linewidth = 0.5, palette = {'PRE':'#ece7f2', 'MID':'#a6bddb', 'POST':'#2b8cbe'})
     plt.xlabel('Score')
     plt.ylabel('Question')
     plt.yticks(range(10), ('Q1B', 'Q1D', 'Q1E', 'Q2B', 'Q2D', 'Q2E', 'Q3B', 'Q3D', 'Q3E', 'Q4B'))
@@ -145,7 +143,7 @@ def GenerateQuestionsGraph(df):
     axes[0].legend(bbox_to_anchor = (-0.08, 1.05))
 
     plt.sca(axes[1])
-    sns.boxplot(x = 'value', y = 'variable', hue = 'Survey', data = dfOther, linewidth = 0.5)
+    sns.boxplot(x = 'value', y = 'variable', hue = 'Survey', data = dfOther, linewidth = 0.5, palette = {'PRE':'#ece7f2', 'POST':'#2b8cbe'})
     plt.xlabel('Score')
     plt.title('Similar Classes (N = {0})'.format(N_Other))
     axes[1].legend().remove()
