@@ -87,9 +87,13 @@ def GenerateTotalScoresGraph(df): # Generate main total scores graph that includ
     fig, axes = plt.subplots(2, 2, figsize = (12, 9))
 
     y_max = df.loc[:, 'models':].apply(max)
+    if('MID' in df['Survey']): # Indicate order of surveys based on whether to include a mid survey level
+        Survey_order = ['PRE', 'MID', 'POST']
+    else:
+        Survey_order = ['PRE', 'POST']
 
     plt.sca(axes[0, 0])
-    sns.boxplot(x = 'Data', y = 'models', hue = 'Survey', data = df, linewidth = 0.5)
+    sns.boxplot(x = 'Data', y = 'models', hue = 'Survey', hue_order = Survey_order, data = df, linewidth = 0.5, palette = {'PRE':'#ece7f2', 'MID':'#a6bddb', 'POST':'#2b8cbe'})
     plt.xticks((0, 1), ('Your Class', 'Other Classes'))
     plt.xlabel('')
     plt.ylabel('Score')
@@ -97,7 +101,7 @@ def GenerateTotalScoresGraph(df): # Generate main total scores graph that includ
     axes[0, 0].legend(bbox_to_anchor = (0, 1.12))
 
     plt.sca(axes[0, 1])
-    sns.boxplot(x = 'Data', y = 'methods', hue = 'Survey', data = df, linewidth = 0.5)
+    sns.boxplot(x = 'Data', y = 'methods', hue = 'Survey', hue_order = Survey_order, data = df, linewidth = 0.5, palette = {'PRE':'#ece7f2', 'MID':'#a6bddb', 'POST':'#2b8cbe'})
     plt.xticks((0, 1), ('Your Class', 'Other Classes'))
     plt.xlabel('')
     plt.ylabel('Score')
@@ -105,7 +109,7 @@ def GenerateTotalScoresGraph(df): # Generate main total scores graph that includ
     axes[0, 1].legend().remove()
 
     plt.sca(axes[1, 0])
-    sns.boxplot(x = 'Data', y = 'models', hue = 'Survey', data = df, linewidth = 0.5)
+    sns.boxplot(x = 'Data', y = 'models', hue = 'Survey', hue_order = Survey_order, data = df, linewidth = 0.5, palette = {'PRE':'#ece7f2', 'MID':'#a6bddb', 'POST':'#2b8cbe'})
     plt.xticks((0, 1), ('Your Class', 'Other Classes'))
     plt.xlabel('')
     plt.ylabel('Score')
@@ -113,7 +117,7 @@ def GenerateTotalScoresGraph(df): # Generate main total scores graph that includ
     axes[1, 0].legend().remove()
 
     plt.sca(axes[1, 1])
-    sns.boxplot(x = 'Data', y = 'TotalScores', hue = 'Survey', data = df, linewidth = 0.5)
+    sns.boxplot(x = 'Data', y = 'TotalScores', hue = 'Survey', hue_order = Survey_order, data = df, linewidth = 0.5, palette = {'PRE':'#ece7f2', 'MID':'#a6bddb', 'POST':'#2b8cbe'})
     plt.xticks((0, 1), ('Your Class', 'Other Classes'))
     plt.xlabel('')
     plt.ylabel('Score')
@@ -140,13 +144,18 @@ def GenerateQuestionsGraph(df):
     plt.ylabel('Question')
     plt.yticks(range(10), ('Q1B', 'Q1D', 'Q1E', 'Q2B', 'Q2D', 'Q2E', 'Q3B', 'Q3D', 'Q3E', 'Q4B'))
     plt.title('Your Class (N = {0})'.format(NValidPost))
-    axes[0].legend(bbox_to_anchor = (-0.08, 1.05))
 
     plt.sca(axes[1])
     sns.boxplot(x = 'value', y = 'variable', hue = 'Survey', data = dfOther, linewidth = 0.5, palette = {'PRE':'#ece7f2', 'POST':'#2b8cbe'})
     plt.xlabel('Score')
     plt.title('Similar Classes (N = {0})'.format(N_Other))
-    axes[1].legend().remove()
+
+    if('PRE' in dfYours['Survey']): # Get legend from axes that has the most bars
+        axes[0].legend(bbox_to_anchor = (-0.08, 1.05))
+        axes[1].legend().remove()
+    else:
+        axes[0].legend().remove()
+        axes[1].legend(bbox_to_anchor = (1.02, 1.05))
 
     axes[1].get_shared_y_axes().join(axes[0], axes[1])
     axes[1].set_ylabel('')
