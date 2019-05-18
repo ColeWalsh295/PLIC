@@ -63,7 +63,7 @@ def Generate(fname, width, NumReportedStudents, Course_Level, WeightsFile = 'Wei
                             The PLIC was designed to evaluate three critical thinking constructs that are important in physics experimentation: evaluating models, evaluating methods, and
                             suggesting follow-up actions. Each of these constructs was hypothesized to be represented by at least three questions (see Table~\ref{tab:Factors}):
                             the \textit{evaluating models} scale by questions Q1B, Q2B, Q3B, and Q3D; the \textit{evaluating methods} scale by questions Q1D, Q2D, and Q4B; and the
-                            \textit{suggesting follow-ups} scale by questions Q1E, Q2E, and Q3E. The correlations of each of question with its hypothesized factor is shown in Fig.~\ref{fig:CFA}.\\
+                            \textit{suggesting follow-ups} scale by questions Q1E, Q2E, and Q3E.\\
 
                             \begin{table*}[!htbp]
                                 \caption{Multiple response questions from the PLIC with their hypothesized factor structures. The number in the question code corresponds to which page the question
@@ -88,15 +88,6 @@ def Generate(fname, width, NumReportedStudents, Course_Level, WeightsFile = 'Wei
                                 \end{tabular}
                                 \label{tab:Factors}
                             \end{table*}
-
-                            \begin{figure}[!htbp]
-                                \centering
-                                \includegraphics[width = 0.9\linewidth]{qgraph.png}
-                                \caption{Correlations of questions with hypothesized factors using a confirmatory factor analysis with historical PLIC data. PLIC questions are represented by
-                                            squares and factors are represented by circles. Double-headed arrows represent correlations between factors; single-headed arrow represent
-                                            standardized factor loadings. $p < 0.001$ for all estimates.\label{fig:CFA}}
-                            \end{figure}
-
                             """))
 
     with doc.create(Section("Scoring the PLIC", numbering = False)):

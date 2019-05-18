@@ -45,10 +45,6 @@ def CalcFactorScores(df_Cumulative, df_Your):
 
             mod.cfa.HYP <- cfa(PLIC.model.HYP, data = MainData, std.lv = TRUE, estimator = 'ML')
 
-            semPaths(mod.cfa.HYP, what = 'diagram', whatLabels = 'stand', layout = 'tree2', residuals = FALSE, nCharNodes = 10, edge.color = 'black', edge.label.cex = 1,
-            nodeLabels = c('Q1B', 'Q2B', 'Q3B', 'Q3D', 'Q1D', 'Q2D', 'Q4B', 'Q1E', 'Q2E', 'Q3E', 'Evaluate\nModels', 'Evaluate\nMethods', 'Suggest\nFollow-ups'),
-            sizeMan = 6, sizeLat = 10, width = 4, height = 2, filetype = 'png')
-
             if(is.null(NewData)){
                 scores.df <- data.frame(lavPredict(mod.cfa.HYP))
             }else{
