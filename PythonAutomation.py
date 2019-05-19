@@ -20,6 +20,7 @@ baseURL = "https://{0}.qualtrics.com/API/v3/responseexports/".format(DataCenter)
 ChangeURL = "https://{0}.qualtrics.com/jfe/form/SV_9QDl20NjVC3w0uN".format(DataCenter)
 
 CIS_SurveyID = "SV_5ouHoTGEF5FBqxD" # Instructor survey ID
+ChangeDates_SurveyID = "SV_9QDl20NjVC3w0uN"
 
 CPERLEmail = 'cperl@cornell.edu' # Shared CPERL email address
 UserEmail = 'as-phy-edresearchlab@cornell.edu' # User email address
@@ -57,6 +58,22 @@ if not CIS_df.empty:
 
 os.remove('Course_Information_Survey.csv')
 
+ChangeDatesFile = DownloadResponses(ChangeDates_SurveyID)
+Changes_df = pd.read_csv(ChangeDatesFile, skiprows = [1, 2]).rename(columns = {'Q1':'InstructorID'})
+
+MasterChanges_df = pd.read_csv('ChangeLog.csv')
+Changes_df = Changes_df[(~Changes_df['ResponseID'].isin(MasterChanges_df['ResponseID'])) & (Changes_df['Finished'] == 1)] # Get new changes to implement
+Changes_df = Master_df.merge(Changes_df, left_on = 'ID', right_on = 'InstructorID', how = 'inner')
+
+if not Changes_df.empty:
+    Changes_df = Changes_df.apply(ChangeDates, axis = 1, args = ('Pre'))
+    Changes_df = Changes_df.apply(ChangeDates, axis = 1, args = ('Mid'))
+    Changes_df = Changes_df.apply(ChangeDates, axis = 1, args = ('Post'))
+Changes_df['Time Updated'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
+MasterChanges_df = pd.concat([MasterChanges_df, Changes_df], axis = 0, join = 'inner')
+MasterChanges_df.to_csv('ChangeLog.csv')
+Master_df = Master_df.update(Changes_df)
+
 Master_df = SurveyAdministration(Master_df, 'Pre') # Check survey reminders and close dates for PRE-survey
 Master_df = SurveyAdministration(Master_df, 'Mid') # Check survey reminders and close dates for MID-survey
 Master_df = SurveyAdministration(Master_df, 'Post') # Check survey reminders and close dates for POST-survey
@@ -65,6 +82,7 @@ Report_df = Master_df.loc[(pd.isnull(Master_df['Report Sent'])) & (pd.notnull(Ma
 Report_df.apply(PrepareReport, axis = 1)
 Report_df['Report Sent'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
 Master_df.update(Report_df) # Update master file with sent reports...
+os.chdir(MainFolder)
 Master_df.to_csv('MasterCourseData.csv', index = False) #...and write it back to the master file
 
 def CleanNewData(df):
@@ -147,6 +165,110 @@ def SurveyAdministration(df, Survey):
         Master_df.to_csv('MasterCourseData.csv', index = False) #...and write it back to the master file
 
     return Master_df
+
+def ChangeDates(Row, Survey):
+    Dates = {'Pre':'Q2_v2', 'Mid':'Q9_v2', 'Post':'Q3_v2'}
+    Reminders = {'Pre':'Q4', 'Mid':'Q8', 'Post':'Q5'}
+    if(~np.isnan(Row[Survey + '-Survey ID']) & np.isnan(Row[Survey + '-Survey Closed']) & ~np.isnan(Row[Dates[Survey]])):
+        try:
+            Row[Survey + '-Survey Close Date'] = datetime.datetime.strptime(Row[Dates[Survey]], "%m-%d-%Y").strftime("%d-%b-%Y")
+        except ValueError: # If an incorrectly formatted date is provided, ignore and move on
+            return -1
+
+        # Reset reminder email statuses if requested
+        if(Row[Reminders[Survey]] == 1):
+            Row[Survey + '-Survey Reminder'] = ''
+        elif(Row[Reminders[Survey]] == 2 and np.isnan(Row[Survey + '-Survey Reminder'])):
+            Row[Survey + '-Survey Reminder'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
+
+        ChangesEmailSend(Row['ID'], Row['Email'], Row['First Name'], Row['Last Name'], Row['Course Name'], Row['Course Number'], Row['Pre-Survey Close Date'], Row['Mid-Survey Close Date'], Row['Post-Survey Close Date'])
+
+    return Row
+
+    def ChangesEmailSend(ID, InstructorEmail, InstructorFirst, InstructorLast, CourseName, Code, PreClose, MidClose, PostClose):
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = "Changes to Survey Dates"
+        msg['From'] = CPERLEmail
+        msg['To'] = InstructorEmail
+
+        if(pd.notnull(PreClose)):
+            PreClose = datetime.datetime.strptime(PreClose, "%d-%b-%Y")
+            PreClose = (PreClose + datetime.timedelta(hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
+        else:
+            PreClose = 'Not Available'
+
+        if(pd.notnull(MidClose)):
+            MidClose = datetime.datetime.strptime(MidClose, "%d-%b-%Y")
+            MidClose = (MidClose + datetime.timedelta(hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
+        else:
+            MidClose = 'Not Available'
+
+        PostClose = datetime.datetime.strptime(PostClose, "%d-%b-%Y")
+        PostClose = (PostClose + datetime.timedelta(hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
+
+    	# Create the body of the message (a plain-text and an HTML version).
+        text = """
+    		   Dear Dr. {First} {Last},\n\n
+
+    		   Thank you again for participating in the PLIC. Changes were recently made to the pre- and/or post-survey close dates
+               for your class, {Course} ({Code}). These surveys are currently set to close for students at the following times:\n\n
+
+               PRE -- {PreClose}\n
+               MID -- {MidClose}\n
+               POST -- {PostClose}\n\n
+
+               If you would like to change these dates again, please fill out the form again with your unique ID ({Identifier}):\n\n
+               {ChangeURL}\n\n
+
+
+    		   Thank you,\n
+    		   Cornell Physics Education Research Lab\n\n
+    		   This message was sent by an automated system.\n
+    		   """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code, PreClose = PreClose, MidClose = MidClose, PostClose = PostClose, Identifier = ID, ChangeURL = ChangeURL)
+
+        html = """\
+    	<html>
+    	  <head></head>
+    	  <body>
+    		<p>Dear Dr. {First} {Last},<br><br>
+
+    		   Thank you again for participating in the PLIC. Changes were recently made to the pre- and/or post-survey close dates
+               for your class, {Course} ({Code}). These surveys are currently set to close for students at the following times:<br><br>
+
+               PRE -- {PreClose}<br>
+               MID -- {MidClose}<br>
+               POST -- {PostClose}<br><br>
+
+               If you would like to change these dates again, please fill out the form again with your unique ID ({Identifier}):<br><br>
+               {ChangeURL}<br><br>
+
+
+    		   Thank you,<br>
+    		   Cornell Physics Education Research Lab<br><br>
+    		   This message was sent by an automated system.<br>
+    		</p>
+    	  </body>
+    	</html>
+       """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code, PreClose = PreClose, MidClose = MidClose, PostClose = PostClose, Identifier = ID, ChangeURL = ChangeURL)
+
+
+        # Record the MIME types of both parts - text/plain and text/html.
+        part1 = MIMEText(text, 'plain')
+        part2 = MIMEText(html, 'html')
+
+        # Attach parts into message container.
+        # According to RFC 2046, the last part of a multipart message, in this case
+        # the HTML message, is best and preferred.
+        msg.attach(part1)
+        msg.attach(part2)
+
+        server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
+        server.starttls()
+        server.login(UserEmail, EmailPassword)
+        server.sendmail(CPERLEmail, InstructorEmail, msg.as_string())
+        server.quit()
+
+        return 0
 
 def PrepareReport(Row):
     Path = "C:/PLIC/" + Row['Season'] + str(Row['Course Year']) + "Files/" + Row['School'] + '_' + str(Row['Course Number']) + '_' + Row['Last Name'] + '_' + Row['ID']
