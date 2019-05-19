@@ -162,19 +162,53 @@ def PrepareReport(Row):
             MidSurveyName = DownloadResponses(Row['Mid-Survey ID'])
             Mid_df = pd.read_csv(MidSurveyName + '.csv', skiprows = [1, 2])
             if((len(Pre_df.index) >= 5) and (len(Mid_df.index) >= 5) and (len(Post_df.index) >= 5)):
-                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], PRE = PreSurveyName + '.csv', MID = MidSurveyName +'.csv', POST = PostSurveyName + '.csv')
-            elif((len(PreDF.index) >= 3) and (len(MidDF.index) < 3)):
-                            ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], Where = 'Automation', PRE = PreSurveyName +'.csv', POST = PostSurveyName + '.csv')
-                        elif((len(PreDF.index) < 3) and (len(MidDF.index) >= 3)):
-                            ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], Where = 'Automation', MID = MidSurveyName +'.csv', POST = PostSurveyName + '.csv')
-                        else:
-                            ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], Where = 'Automation', POST = PostSurveyName + '.csv')
-                    elif(len(PreDF.index) >= 3):
-                        ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], Where = 'Automation', PRE = PreSurveyName +'.csv', POST = PostSurveyName + '.csv')
-                    else:
-                        ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], Where = 'Automation', POST = PostSurveyName + '.csv')
+                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], PRE = Pre_df, MID = Mid_df, POST = Post_df)
+            elif((len(Pre_df.index) >= 5) and (len(Post_df.index) >= 5)):
+                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], PRE = Pre_df, POST = Post_df)
+            elif(len(Post_df.index) >= 5):
+                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], POST = Post_df)
+        else:
+            if((len(Pre_df.index) >= 5) and (len(Post_df.index) >= 5)):
+                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], PRE = Pre_df, POST = Post_df)
+            elif(len(Post_df.index) >= 5):
+                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], POST = Post_df)
+    elif(len(Post_df.index) >= 5):
+        ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], POST = Post_df)
+
+
+
+        os.chdir(Path)
+        if(MasterDF.loc[Index, 'Credit Offered']): # If the instructor is offering credit include a list of names and IDs of those who completed each of the surveys
+            PostNamesDF = GetResponseData(MasterDF.loc[Index, 'School'], MasterDF.loc[Index, 'Course Number'], MasterDF.loc[Index, 'Last Name'], MasterDF.loc[Index, 'Season'], MasterDF.loc[Index, 'Course Year'], MasterDF.loc[Index, 'ID'], MasterDF.loc[Index, 'Post-Survey ID'], DataType = 'Names')
+            PostNamesDF.columns = ['Post-Survey IDs', 'Post-Survey Last Names', 'Post-Survey First Names']
+            if(NumSurveys >= 2):
+                PreNamesDF = GetResponseData(MasterDF.loc[Index, 'School'], MasterDF.loc[Index, 'Course Number'], MasterDF.loc[Index, 'Last Name'], MasterDF.loc[Index, 'Season'], MasterDF.loc[Index, 'Course Year'], MasterDF.loc[Index, 'ID'], MasterDF.loc[Index, 'Pre-Survey ID'], DataType = 'Names')
+                PreNamesDF.columns = ['Pre-Survey IDs', 'Pre-Survey Last Names', 'Pre-Survey First Names']
+                if((NumSurveys == 3) and not MidDF.empty):
+                    MidNamesDF = GetResponseData(MasterDF.loc[Index, 'School'], MasterDF.loc[Index, 'Course Number'], MasterDF.loc[Index, 'Last Name'], MasterDF.loc[Index, 'Season'], MasterDF.loc[Index, 'Course Year'], MasterDF.loc[Index, 'ID'], MasterDF.loc[Index, 'Mid-Survey ID'], DataType = 'Names')
+                    MidNamesDF.columns = ['Mid-Survey IDs', 'Mid-Survey Last Names', 'Mid-Survey First Names']
+                    NamesDF = PreNamesDF.merge(MidNamesDF, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Mid-Survey Last Names', 'Mid-Survey First Names'])
+                    NamesDF = NamesDF.merge(PostNamesDF, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Post-Survey Last Names', 'Post-Survey First Names'])
                 else:
-                    ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], Where = 'Automation', POST = PostSurveyName + '.csv')
+                    NamesDF = PreNamesDF.merge(PostNamesDF, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Post-Survey Last Names', 'Post-Survey First Names'])
+                if(PreDF.empty):
+                    NamesDF = NamesDF.drop(columns = ['Pre-Survey IDs', 'Pre-Survey Last Names', 'Pre-Survey First Names'])
+            else:
+                NamesDF = PostNamesDF.copy()
+            NamesDF = NamesDF.fillna('')
+            NamesDF['PostName'] = NamesDF['Post-Survey Last Names'] + NamesDF['Post-Survey First Names']
+            if(NumSurveys > 1):
+                NamesDF['PreName'] = NamesDF['Pre-Survey Last Names'] + NamesDF['Pre-Survey First Names']
+                NamesDF = NamesDF.sort_values(by = ['PostName', 'PreName'])
+                NamesDF = NamesDF.drop(labels = ['PreName', 'PostName'], axis = 1)
+            else:
+                NamesDF = NamesDF.sort_values(by = 'PostName')
+                NamesDF = NamesDF.drop(labels = 'PostName', axis = 1)
+            NamesFileName = MasterDF.loc[Index, 'Season'] + str(MasterDF.loc[Index, 'Course Year']) + '_' + MasterDF.loc[Index, 'School'] + '_' + str(MasterDF.loc[Index, 'Course Number']) +'_' + MasterDF.loc[Index, 'Last Name'] + '_Names.csv'
+            NamesDF.to_csv(NamesFileName, index = False)
+
+
+
 
 def DownloadResponses(SurveyID):
     # Setting user Parameters
@@ -750,7 +784,7 @@ def SendSurveyClose(Row, PreMid):
 
     return 0
 
-def GetResponseData(Row, Survey, DataType):
+def GetNumberStudents(Row, Survey, DataType):
     # Move to the specific course directory to download responses
     path = "C:/PLIC/" + Row['Season'] + str(Row['Course Year']) + "Files/" + Row['School'] + '_' + str(Row['Course Number']) + '_' + Row['Last Name'] + '_' + Row['ID']
 
@@ -759,21 +793,14 @@ def GetResponseData(Row, Survey, DataType):
     Survey_Name = GetSurveyName(Row[Survey + '-Survey ID'])
     StudentDF = pd.read_csv(Survey_Name + '.csv', skiprows = [1, 2])
 
-    if(DataType == 'NumberOnly'):
-        NumStudents = len(StudentDF.index)
-        return NumStudents
+    NumStudents = len(StudentDF.index)
+    return NumStudents
 
-    elif(DataType == 'Names'):
-        NamesDF = StudentDF.loc[:, ['Q5a', 'Q5b', 'Q5c']].dropna(how = 'all')
-        NamesDF = NamesDF.reset_index(drop = True)
-        NCNamesDF = StudentDF.loc[:, ['QNC1a', 'QNC1b', 'QNC1c']].dropna(how = 'all')
-        NCNamesDF = NCNamesDF.reset_index(drop = True)
-        NCNamesDF.columns = ['Q5a', 'Q5b', 'Q5c']
-        NamesDF = pd.concat([NamesDF, NCNamesDF], join = 'inner')
-        NamesDF = NamesDF.reset_index(drop = True)
-        NamesDF = NamesDF.replace(1, '')
-        NamesDF = NamesDF.apply(lambda x: x.astype(str).str.lower())
-        return NamesDF
+def GetNamesdf(df):
+    Names_df = df.loc[:, ['Q5a', 'Q5b', 'Q5c']].dropna(how = 'all').reset_index(drop = True) # Get Names columns from dataframe
+    NCNames_df = df.loc[:, ['QNC1a', 'QNC1b', 'QNC1c']].dropna(how = 'all').reset_index(drop = True).rename(columns = {'QNC1a':'Q5a', 'QNC1b':'Q5b', 'QNC1c':'Q5c'}) # Get non-consenting names from dataframe
+    Names_df = pd.concat([Names_df, NCNames_df], axis = 0, join = 'inner').reset_index(drop = True).replace(1, '').apply(lambda x: x.astype(str).str.lower()) # Join the dataframes and convert everything to lower case
+    return Names_df
 
 if __name__ == '__main__':
 	main()
