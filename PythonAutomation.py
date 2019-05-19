@@ -62,8 +62,10 @@ Master_df = SurveyAdministration(Master_df, 'Mid') # Check survey reminders and 
 Master_df = SurveyAdministration(Master_df, 'Post') # Check survey reminders and close dates for POST-survey
 
 Report_df = Master_df.loc[(pd.isnull(Master_df['Report Sent'])) & (pd.notnull(Master_df['Post-Survey Closed']))] # Get classes that are ready to receive reports
+Report_df.apply(PrepareReport, axis = 1)
 Report_df['Report Sent'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
-
+Master_df.update(Report_df) # Update master file with sent reports...
+Master_df.to_csv('MasterCourseData.csv', index = False) #...and write it back to the master file
 
 def CleanNewData(df):
     df = df.rename(columns = {'ResponseID':'ID', 'Q1':'First Name', 'Q2':'Last Name', 'Q3':'Email', 'Q4':'School', 'Q5':'Course Name', 'Q6':'Course Number', 'Q8':'Number Of Students'})
@@ -125,7 +127,7 @@ def SurveyAdministration(df, Survey):
 
     Survey_Reminder_df = Survey_df.loc[(CurrentTime >= (Survey_df['Close Date'] - datetime.timedelta(days = 4))) & (pd.isnull(Survey_df[Survey + '-Survey Reminder'])), :]
     if not Survey_Reminder_df.empty:
-        Survey_Reminder_df['N_Students'] = Survey_Reminder_df.apply(GetResponseData, axis = 1, args = (Survey, 'NumberOnly',))
+        Survey_Reminder_df['N_Students'] = Survey_Reminder_df.apply(GetNumberStudents, axis = 1, args = (Survey,))
         os.chdir(MainFolder)
         Survey_Reminder_df.apply(lambda row: ZeroResponseEmail(row, axis = 1, args = (Survey,)) if row['N_Students'] == 0 else ReminderEmailSend(row, axis = 1, args = (Survey,))) # Send a reminder email indicating the number of students that have responded so far
         Survey_Reminder_df['Close Date'] = Survey_Reminder_df.apply(lambda x: x['Close Date'] + datetime.timedelta(days = 3) if x['N_Students'] == 0 else x['Close Date'], axis = 1) # Move up the close date if no one hase responded yet
@@ -137,7 +139,7 @@ def SurveyAdministration(df, Survey):
     Survey_Close_df = Survey_df.loc[CurrentTime >= Survey_df['Close Date'] + datetime.timedelta(hours = 23, minutes = 59, seconds = 59), :]
     if not Survey_Close_df.empty:
         Survey_Close_df[Survey '-Survey ID'].apply(lambda x: ActivateSurvey(x, Active = False))
-        Survey_Close_df['N_Students'] = Survey_Close_df.apply(GetResponseData, axis = 1, args = (Survey, 'NumberOnly',))
+        Survey_Close_df['N_Students'] = Survey_Close_df.apply(GetNumberStudents, axis = 1, args = (Survey,))
         if Survey != 'Post':
             Survey_Close_df.apply(SendSurveyClose, axis = 1, args = (Survey,))
         Survey_Close_df[Survey + '-Survey Closed'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
@@ -151,16 +153,21 @@ def PrepareReport(Row):
     os.chdir(Path)
     PostSurveyName = DownloadResponses(Row['Post-Survey ID']) # Download the POST-survey data
     Post_df = pd.read_csv(PostSurveyName + '.csv', skiprows = [1, 2])
-    if(PostDF.empty): # If there are not any post responses, do nothing
+    if(len(Post_df) < 5): # If there are less than 5 post responses, do nothing
         return -1
+    PostNames_df = GetNamesdf(Post_df, 'Post')
     PDFName = Path + "/" + Row['Season'] + str(Row['Course Year']) + '_' + Row['School'] + '_' + str(Row['Course Number']) + '_' + Row['Last Name'] + '_Report'
     print(PDFName)
     if(Row['Number of Surveys'] >= 2): # If there are at least 2 surveys, download the PRE-survey data
         PreSurveyName = DownloadResponses(Row['Pre-Survey ID'])
         Pre_df = pd.read_csv(PreSurveyName + '.csv', skiprows = [1, 2])
+        PreNames_df = GetNamesdf(Pre_df, 'Pre')
         if(Row['Number of Surveys'] == 3):
             MidSurveyName = DownloadResponses(Row['Mid-Survey ID'])
             Mid_df = pd.read_csv(MidSurveyName + '.csv', skiprows = [1, 2])
+            MidNames_df = GetNamesdf(Mid_df, 'Mid')
+            Names_df = PreNames_df.merge(MidNames_df, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Mid-Survey Last Names', 'Mid-Survey First Names'])
+            Names_df = Names_df.merge(PostNames_df, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Post-Survey Last Names', 'Post-Survey First Names'])
             if((len(Pre_df.index) >= 5) and (len(Mid_df.index) >= 5) and (len(Post_df.index) >= 5)):
                 ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], PRE = Pre_df, MID = Mid_df, POST = Post_df)
             elif((len(Pre_df.index) >= 5) and (len(Post_df.index) >= 5)):
@@ -168,47 +175,32 @@ def PrepareReport(Row):
             elif(len(Post_df.index) >= 5):
                 ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], POST = Post_df)
         else:
+            Names_df = PreNames_df.merge(PostNames_df, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Post-Survey Last Names', 'Post-Survey First Names'])
             if((len(Pre_df.index) >= 5) and (len(Post_df.index) >= 5)):
                 ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], PRE = Pre_df, POST = Post_df)
             elif(len(Post_df.index) >= 5):
                 ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], POST = Post_df)
-    elif(len(Post_df.index) >= 5):
+    else:
+        Names_df = PostNames_df.copy()
         ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], POST = Post_df)
 
+    if(Row['Credit Offered']):
+        Names_df = Names_df.fillna('')
+        Names_df['PostName'] = Names_df['Post-Survey Last Names'] + Names_df['Post-Survey First Names']
+        if('Pre-Survey Last Names' in Names_df.columns):
+            Names_df['PreName'] = Names_df['Pre-Survey Last Names'] + Names_df['Pre-Survey First Names']
+            Names_df = Names_df.sort_values(by = ['PostName', 'PreName'])
+            NamesDF = Names_df.drop(labels = ['PreName', 'PostName'], axis = 1)
+        else:
+            Names_df = Names_df.sort_values(by = 'PostName')
+            Names_df = Names_df.drop(labels = 'PostName', axis = 1)
+        NamesFileName = Row['Season'] + str(Row['Course Year']) + '_' + Row['School'] + '_' + str(Row['Course Number']) +'_' + Row['Last Name'] + '_Names.csv'
+        Names_df.to_csv(NamesFileName, index = False)
+        SendReport(Row['First Name'], Row['Last Name'], Row['Email'], str(Row['Course Name']), str(Row['Course Number']), PDFName + '.pdf', CreditOffered = True, NamesFile = NamesFileName)
+    else:
+        SendReport(Row['First Name'], Row['Last Name'], Row['Email'], str(Row['Course Name']), str(Row['Course Number']), PDFName + '.pdf')
 
-
-        os.chdir(Path)
-        if(MasterDF.loc[Index, 'Credit Offered']): # If the instructor is offering credit include a list of names and IDs of those who completed each of the surveys
-            PostNamesDF = GetResponseData(MasterDF.loc[Index, 'School'], MasterDF.loc[Index, 'Course Number'], MasterDF.loc[Index, 'Last Name'], MasterDF.loc[Index, 'Season'], MasterDF.loc[Index, 'Course Year'], MasterDF.loc[Index, 'ID'], MasterDF.loc[Index, 'Post-Survey ID'], DataType = 'Names')
-            PostNamesDF.columns = ['Post-Survey IDs', 'Post-Survey Last Names', 'Post-Survey First Names']
-            if(NumSurveys >= 2):
-                PreNamesDF = GetResponseData(MasterDF.loc[Index, 'School'], MasterDF.loc[Index, 'Course Number'], MasterDF.loc[Index, 'Last Name'], MasterDF.loc[Index, 'Season'], MasterDF.loc[Index, 'Course Year'], MasterDF.loc[Index, 'ID'], MasterDF.loc[Index, 'Pre-Survey ID'], DataType = 'Names')
-                PreNamesDF.columns = ['Pre-Survey IDs', 'Pre-Survey Last Names', 'Pre-Survey First Names']
-                if((NumSurveys == 3) and not MidDF.empty):
-                    MidNamesDF = GetResponseData(MasterDF.loc[Index, 'School'], MasterDF.loc[Index, 'Course Number'], MasterDF.loc[Index, 'Last Name'], MasterDF.loc[Index, 'Season'], MasterDF.loc[Index, 'Course Year'], MasterDF.loc[Index, 'ID'], MasterDF.loc[Index, 'Mid-Survey ID'], DataType = 'Names')
-                    MidNamesDF.columns = ['Mid-Survey IDs', 'Mid-Survey Last Names', 'Mid-Survey First Names']
-                    NamesDF = PreNamesDF.merge(MidNamesDF, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Mid-Survey Last Names', 'Mid-Survey First Names'])
-                    NamesDF = NamesDF.merge(PostNamesDF, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Post-Survey Last Names', 'Post-Survey First Names'])
-                else:
-                    NamesDF = PreNamesDF.merge(PostNamesDF, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Post-Survey Last Names', 'Post-Survey First Names'])
-                if(PreDF.empty):
-                    NamesDF = NamesDF.drop(columns = ['Pre-Survey IDs', 'Pre-Survey Last Names', 'Pre-Survey First Names'])
-            else:
-                NamesDF = PostNamesDF.copy()
-            NamesDF = NamesDF.fillna('')
-            NamesDF['PostName'] = NamesDF['Post-Survey Last Names'] + NamesDF['Post-Survey First Names']
-            if(NumSurveys > 1):
-                NamesDF['PreName'] = NamesDF['Pre-Survey Last Names'] + NamesDF['Pre-Survey First Names']
-                NamesDF = NamesDF.sort_values(by = ['PostName', 'PreName'])
-                NamesDF = NamesDF.drop(labels = ['PreName', 'PostName'], axis = 1)
-            else:
-                NamesDF = NamesDF.sort_values(by = 'PostName')
-                NamesDF = NamesDF.drop(labels = 'PostName', axis = 1)
-            NamesFileName = MasterDF.loc[Index, 'Season'] + str(MasterDF.loc[Index, 'Course Year']) + '_' + MasterDF.loc[Index, 'School'] + '_' + str(MasterDF.loc[Index, 'Course Number']) +'_' + MasterDF.loc[Index, 'Last Name'] + '_Names.csv'
-            NamesDF.to_csv(NamesFileName, index = False)
-
-
-
+    return 0
 
 def DownloadResponses(SurveyID):
     # Setting user Parameters
@@ -253,6 +245,25 @@ def DownloadResponses(SurveyID):
         DownloadResponses(SurveyID)
 
     return GetSurveyName(SurveyID)
+
+def GetNumberStudents(Row, Survey, DataType):
+    # Move to the specific course directory to download responses
+    path = "C:/PLIC/" + Row['Season'] + str(Row['Course Year']) + "Files/" + Row['School'] + '_' + str(Row['Course Number']) + '_' + Row['Last Name'] + '_' + Row['ID']
+
+    os.chdir(path)
+    DownloadResponses(Row[Survey + '-Survey ID'])
+    Survey_Name = GetSurveyName(Row[Survey + '-Survey ID'])
+    StudentDF = pd.read_csv(Survey_Name + '.csv', skiprows = [1, 2])
+
+    NumStudents = len(StudentDF.index)
+    return NumStudents
+
+def GetNamesdf(df, Survey):
+    Names_df = df.loc[:, ['Q5a', 'Q5b', 'Q5c']].dropna(how = 'all').reset_index(drop = True) # Get Names columns from dataframe
+    NCNames_df = df.loc[:, ['QNC1a', 'QNC1b', 'QNC1c']].dropna(how = 'all').reset_index(drop = True).rename(columns = {'QNC1a':'Q5a', 'QNC1b':'Q5b', 'QNC1c':'Q5c'}) # Get non-consenting names from dataframe
+    Names_df = pd.concat([Names_df, NCNames_df], axis = 0, join = 'inner').reset_index(drop = True).replace(1, '').apply(lambda x: x.astype(str).str.lower()) # Join the dataframes and convert everything to lower case
+    Names_df.columns = [Survey + '-Survey IDs', Survey + '-Survey Last Names', Survey + '-Survey First Names'] # Set column names
+    return Names_df
 
 def GetSurveyName(SurveyID):
     baseUrl = "https://{0}.qualtrics.com/API/v3/surveys/{1}".format(DataCenter, SurveyID)
@@ -784,23 +795,80 @@ def SendSurveyClose(Row, PreMid):
 
     return 0
 
-def GetNumberStudents(Row, Survey, DataType):
-    # Move to the specific course directory to download responses
-    path = "C:/PLIC/" + Row['Season'] + str(Row['Course Year']) + "Files/" + Row['School'] + '_' + str(Row['Course Number']) + '_' + Row['Last Name'] + '_' + Row['ID']
+def SendReport(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Code, ReportFile, CreditOffered = False, NamesFile = None): # Note that unlike other email send functions, this one takes values, not a series as arguments
+    msg = MIMEMultipart('alternative')
+    msg['From'] = CPERLEmail
+    msg['To'] = InstructorEmail
+    #msg['To'] = CPERLEmail
+    msg['Cc'] = CPERLEmail
+    msg['Subject'] = "PLIC Report"
 
-    os.chdir(path)
-    DownloadResponses(Row[Survey + '-Survey ID'])
-    Survey_Name = GetSurveyName(Row[Survey + '-Survey ID'])
-    StudentDF = pd.read_csv(Survey_Name + '.csv', skiprows = [1, 2])
+	# Create the body of the message (a plain-text and an HTML version).
+    text = """
+		   Dear Dr. {First} {Last},\n\n
 
-    NumStudents = len(StudentDF.index)
-    return NumStudents
+		   Thank you again for participating in the PLIC. Please find attached a copy of the report summarizing the PLIC
+		   results for your course, {Course} ({Code}). Additionally, if you indicated to us that you are offering students credit
+           for completing the survey we have included a CSV file with their names here.\n\n
+		   We are continuing to test and improve our new report generation system, so please let us know by replying to this
+		   email if you have any questions, comments, or suggestions regarding this new report format.\n\n
 
-def GetNamesdf(df):
-    Names_df = df.loc[:, ['Q5a', 'Q5b', 'Q5c']].dropna(how = 'all').reset_index(drop = True) # Get Names columns from dataframe
-    NCNames_df = df.loc[:, ['QNC1a', 'QNC1b', 'QNC1c']].dropna(how = 'all').reset_index(drop = True).rename(columns = {'QNC1a':'Q5a', 'QNC1b':'Q5b', 'QNC1c':'Q5c'}) # Get non-consenting names from dataframe
-    Names_df = pd.concat([Names_df, NCNames_df], axis = 0, join = 'inner').reset_index(drop = True).replace(1, '').apply(lambda x: x.astype(str).str.lower()) # Join the dataframes and convert everything to lower case
-    return Names_df
+		   Thank you,\n
+		   Cornell Physics Education Research Lab\n\n
+		   This message was sent by an automated system.\n
+		   """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
+
+    html = """\
+	<html>
+	  <head></head>
+	  <body>
+		<p>Dear Dr. {First} {Last},<br><br>
+		   Thank you again for participating in the PLIC. Please find attached a copy of the report summarizing the PLIC
+		   results for your course, {Course} ({Code}). Additionally, if you indicated to us that you are offering students credit
+           for completing the survey we have included a CSV file with their names here.<br><br>
+		   We are continuing to test and improve our new report generation system, so please let us know by replying to this
+		   email if you have any questions, comments, or suggestions regarding this new report format.<br><br>
+
+		   Thank you,<br>
+		   Cornell Physics Education Research Lab<br><br>
+		   This message was sent by an automated system.
+		</p>
+	  </body>
+	</html>
+	""".format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
+
+
+    # Record the MIME types of both parts - text/plain and text/html.
+    part1 = MIMEText(text, 'plain')
+    part2 = MIMEText(html, 'html')
+
+    # Attach parts into message container.
+    # According to RFC 2046, the last part of a multipart message, in this case
+    # the HTML message, is best and preferred.
+    msg.attach(part1)
+    msg.attach(part2)
+
+    f_pdf = open(ReportFile, 'rb')
+    att_pdf = MIMEApplication(f_pdf.read(), _subtype = "pdf")
+    f_pdf.close()
+    att_pdf.add_header('Content-Disposition', 'attachment', filename = ReportFile)
+    msg.attach(att_pdf)
+
+    if(CreditOffered == True):
+        f_csv=open(NamesFile, 'rb')
+        att_csv = MIMEApplication(f_csv.read(), _subtype="csv")
+        f_csv.close()
+        att_csv.add_header('Content-Disposition', 'attachment', filename = NamesFile)
+        msg.attach(att_csv)
+
+    server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
+    server.starttls()
+    server.login(UserEmail, EmailPassword)
+    server.sendmail(CPERLEmail, [InstructorEmail, CPERLEmail], msg.as_string())
+    #server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+    server.quit()
+
+    return 0
 
 if __name__ == '__main__':
 	main()
