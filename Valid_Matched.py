@@ -2,26 +2,19 @@ import numpy as np
 import pandas as pd
 import sys
 
-def ValMat(*Surveys, DoMatch = True):
-    global NumSurveys
-    NumSurveys = len(Surveys)
-
-    PostFile = Surveys[-1]
-    dfPost = pd.read_csv(PostFile, skiprows = [1])
+def ValMat(DoMatch = True, **Dataframes):
+    dfPost = Dataframes['POST']
     dfPost = Validate(dfPost, 'POST')
     NValidPost = len(dfPost.index)
-    if(NumSurveys >= 2):
-        PreFile = Surveys[0]
-        dfPre = pd.read_csv(PreFile, skiprows = [1])
+    if('PRE' in Dataframes.keys()):
+        dfPre = Dataframes['PRE']
         dfPre = Validate(dfPre, 'PRE')
         NValidPre = len(dfPre.index)
-        if(NumSurveys == 2):
-            if(DoMatch == True):
-                dfPre, dfPost = Match(dfPre = dfPre, dfPost = dfPost) # Matching Pre and Post
+        if('MID' not in Dataframes.keys() and DoMatch == True):
+            dfPre, dfPost = Match(dfPre = dfPre, dfPost = dfPost) # Matching Pre and Post
             return NValidPre, NValidPost, dfPre, dfPost
-        elif(NumSurveys == 3):
-            MidFile = Surveys[1]
-            dfMid = pd.read_csv(MidFile, skiprows = [1])
+        elif('MID' in Dataframes.keys()):
+            dfMid = Dataframes['MID']
             dfMid = Validate(dfMid, 'MID')
             NValidMid = len(dfMid.index)
             if(DoMatch == True):
@@ -67,7 +60,7 @@ def Match(dfPre, dfPost, dfMid = None):
         Intersection_ID = Intersection_ID.remove(np.nan)
 
     # Match on ID or partial name matching (i.e., smithwill = smithwilliam and andrewwhite = drewwhite)
-    if(NumSurveys == 2):
+    if(dfMid is None):
         dfPre = dfPre[(dfPre['Q5a'].isin(Intersection_ID)) | (dfPre['FullName'].str.contains('|'.join(list(PostNameSet)))) | (dfPre['FullName'].apply(lambda n: n in '|'.join(list(PostNameSet))))].reset_index(drop = True)
         dfPost = dfPost[(dfPost['Q5a'].isin(Intersection_ID)) | (dfPost['FullName'].str.contains('|'.join(list(PreNameSet)))) | (dfPost['FullName'].apply(lambda n: n in '|'.join(list(PreNameSet))))].reset_index(drop = True)
 

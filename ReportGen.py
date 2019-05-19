@@ -6,7 +6,7 @@ import pylatex.config as cf
 from pylatex import Document, Package, Center, NewPage, Section, MiniPage, FootnoteText, Figure, Tabular, Table, NoEscape, Itemize
 import ReportGraph
 
-def Generate(fname, width, NumReportedStudents, Course_Level, WeightsFile = 'Weights_May2019.csv', **Surveys):
+def Generate(fname, width, NumReportedStudents, Course_Level, WeightsFile = 'Weights_May2019.csv', **Dataframes):
 
     # Load the historical data
     CumulativePre = 'PreSurveys_ValMat.csv'
@@ -14,19 +14,16 @@ def Generate(fname, width, NumReportedStudents, Course_Level, WeightsFile = 'Wei
     Weightsdf = pd.read_csv(WeightsFile).transpose()[0]
 
     # Generate graphs for 1/2/3 class surveys in comparison to other classes
-    if('PRE' in Surveys.keys()):
-        if('MID' in Surveys.keys()):
-            NumPreResponses, NumMidResponses, NumPostResponses, Predf, Middf, Postdf = ReportGraph.GenerateGraph(CumulativePre, CumulativePost, Course_Level, Weightsdf, PRE = Surveys['PRE'],
-            MID = Surveys['MID'], POST = Surveys['POST'])
+    if('PRE' in Dataframes.keys()):
+        if('MID' in Dataframes.keys()):
+            NumPreResponses, NumMidResponses, NumPostResponses, Predf, Middf, Postdf = ReportGraph.GenerateGraph(CumulativePre, CumulativePost, Course_Level, Weightsdf, PRE = Dataframes['PRE'],
+            MID = Dataframes['MID'], POST = Dataframes['POST'])
             Middf = Middf.fillna(0)
         else: # Set mid-survey to pre-survey
-            NumPreResponses, NumPostResponses, Predf, Postdf = ReportGraph.GenerateGraph(CumulativePre, CumulativePost, Course_Level, Weightsdf, PRE = Surveys['PRE'], POST = Surveys['POST'])
-        Predf = Predf.fillna(0)
-    elif('MID' in Surveys.keys()):
-        NumPreResponses, NumPostResponses, Predf, Postdf = ReportGraph.GenerateGraph(CumulativePre, CumulativePost, Course_Level, Weightsdf, PRE = Surveys['MID'], POST = Surveys['POST'])
+            NumPreResponses, NumPostResponses, Predf, Postdf = ReportGraph.GenerateGraph(CumulativePre, CumulativePost, Course_Level, Weightsdf, PRE = Dataframes['PRE'], POST = Dataframes['POST'])
         Predf = Predf.fillna(0)
     else:
-        NumPostResponses, Postdf = ReportGraph.GenerateGraph(CumulativePre, CumulativePost, Course_Level, Weightsdf, POST = Surveys['POST'])
+        NumPostResponses, Postdf = ReportGraph.GenerateGraph(CumulativePre, CumulativePost, Course_Level, Weightsdf, POST = Dataframes['POST'])
     Postdf = Postdf.fillna(0)
     NumMatchedResponses = len(Postdf.index)
 
@@ -138,12 +135,12 @@ def Generate(fname, width, NumReportedStudents, Course_Level, WeightsFile = 'Wei
                         with doc.create(Tabular('| l | r |')) as Tab1:
                             Tab1.add_hline()
                             Tab1.add_row(("Reported Number of students in class", NumReportedStudents))
-                            if('PRE' in Surveys.keys()):
+                            if('PRE' in Dataframes.keys()):
                                 Tab1.add_row(("Number of valid PRE-responses", NumPreResponses))
-                            if('MID' in Surveys.keys()):
+                            if('MID' in Dataframes.keys()):
                                 Tab1.add_row(("Number of valid MID-responses", NumMidResponses))
                             Tab1.add_row(("Number of valid POST-responses", NumPostResponses))
-                            if(len(Surveys.keys()) >= 2):
+                            if(len(Dataframes.keys()) >= 2):
                                 Tab1.add_row(("Number of matched responses", NumMatchedResponses))
                                 Tab1.add_row(("Estimated Fraction of class participating", round(NumMatchedResponses/float(NumReportedStudents), 2)))
                             else:
@@ -186,7 +183,7 @@ def Generate(fname, width, NumReportedStudents, Course_Level, WeightsFile = 'Wei
 
         with doc.create(Center()) as centered:
             with doc.create(Table(position = 'h!')) as Tab:
-                if(('PRE' in Surveys.keys()) or ('MID' in Surveys.keys())):
+                if(('PRE' in Dataframes.keys()) or ('MID' in Dataframes.keys())):
                     with doc.create(Tabular('c l c l c')) as Tab1:
                         Tab1.add_row((FootnoteText("Question"), FootnoteText("Pre-Survey"), FootnoteText('Value'), FootnoteText("Post-Survey"), FootnoteText('Value')))
                         Tab1.add_hline()
