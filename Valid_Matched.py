@@ -47,7 +47,7 @@ def Match(dfPre, dfPost, dfMid = None):
     if np.nan in PostNameSet:
         PostNameSet = PostNameSet.remove(np.nan)
 
-    if(NumSurveys == 2):
+    if(dfMid is None):
         Intersection_ID = set.intersection(set(dfPre['Q5a']), set(dfPost['Q5a'])) # Get ids that are in both pre and post surveys
     else:
         dfMid = ProcessNames(dfMid)

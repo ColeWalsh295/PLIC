@@ -11,12 +11,10 @@ pandas2ri.activate()
 from rpy2.robjects.packages import importr
 
 def CalcScore(df, Weights):
-    df = df.fillna(0)
-
     for Q in ['Q1b', 'Q1d', 'Q1e', 'Q2b', 'Q2d', 'Q2e', 'Q3b', 'Q3d', 'Q3e', 'Q4b']: # Loop over questions
 
         Items = [c for c in Weights.index if Q in c] # Get response choices for question
-        df_Q = df[Items].astype(str).apply(lambda x: x.str.replace('^(?!0).*$', '1')).astype(float) # Not useful for future surveys, but used to replace FR codes when coders used alternaive codes not 1
+        df_Q = df[Items].fillna(0).astype(str).apply(lambda x: x.str.replace('^(?!0).*$', '1')).astype(float) # Not useful for future surveys, but used to replace FR codes when coders used alternaive codes not 1
         Q_Weights = Weights[Items] # Pull response choice weights from Weights vector
         Ordered_Weights = Q_Weights.nlargest(3) # Get the three largest weights, sorted
         NumSelectedSeries = df_Q.sum(axis = 1).clip(upper = 3).map({0:1, 1:Ordered_Weights[0], 2:Ordered_Weights[:-1].sum(), 3:Ordered_Weights.sum()}) # Get normalizations for each student, mapping number of selected items
