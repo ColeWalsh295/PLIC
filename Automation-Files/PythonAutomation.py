@@ -10,7 +10,7 @@ import datetime
 
 # Setting user Parameters
 global MainFolder, DataCenter, baseURL, apiToken, CPERLEmail, UserEmail
-# apiToken = API token for communicating with qualtrics
+apiToken = '5N2AgSqOjUd5mqlhNR3qLkMFY0eDAEv9Y9gnADds'
 # SharedCole = User Id for a shared user
 # SharedKatherine = User Id for a shared user
 # SharedUsers = [SharedCole, SharedKatherine] # Users to share surveys with in Qualtrics from main account
@@ -270,7 +270,7 @@ def ChangeDates(Row, Survey):
 
         return 0
 
-def PrepareReport(Row):
+def PrepareReport(Row, ErrorEmail = False):
     Path = "C:/PLIC/" + Row['Season'] + str(Row['Course Year']) + "Files/" + Row['School'] + '_' + str(Row['Course Number']) + '_' + Row['Last Name'] + '_' + Row['ID']
     os.chdir(Path)
     PostSurveyName = DownloadResponses(Row['Post-Survey ID']) # Download the POST-survey data
@@ -296,12 +296,17 @@ def PrepareReport(Row):
                 ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], PRE = Pre_df, POST = Post_df)
             elif(len(Post_df.index) >= 5):
                 ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], POST = Post_df)
+            else:
+                ErrorEmail = True
+
         else:
             Names_df = PreNames_df.merge(PostNames_df, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Post-Survey Last Names', 'Post-Survey First Names'])
             if((len(Pre_df.index) >= 5) and (len(Post_df.index) >= 5)):
                 ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], PRE = Pre_df, POST = Post_df)
             elif(len(Post_df.index) >= 5):
                 ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], POST = Post_df)
+            else:
+                ErrorEmail = True
     else:
         Names_df = PostNames_df.copy()
         ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], POST = Post_df)
@@ -318,13 +323,19 @@ def PrepareReport(Row):
             Names_df = Names_df.drop(labels = 'PostName', axis = 1)
         NamesFileName = Row['Season'] + str(Row['Course Year']) + '_' + Row['School'] + '_' + str(Row['Course Number']) +'_' + Row['Last Name'] + '_Names.csv'
         Names_df.to_csv(NamesFileName, index = False)
-        SendReport(Row['First Name'], Row['Last Name'], Row['Email'], str(Row['Course Name']), str(Row['Course Number']), PDFName + '.pdf', CreditOffered = True, NamesFile = NamesFileName)
+        if ErrorEmail:
+            SendErrorEmail(Row['First Name'], Row['Last Name'], Row['Email'], str(Row['Course Name']), str(Row['Course Number']), NamesFile = NamesFileName)
+            return 0
+        SendReport(Row['First Name'], Row['Last Name'], Row['Email'], str(Row['Course Name']), str(Row['Course Number']), PDFName + '.pdf', NamesFile = NamesFileName)
     else:
+        if ErrorEmail:
+            SendErrorEmail(Row['First Name'], Row['Last Name'], Row['Email'], str(Row['Course Name']), str(Row['Course Number']))
+            return 0
         SendReport(Row['First Name'], Row['Last Name'], Row['Email'], str(Row['Course Name']), str(Row['Course Number']), PDFName + '.pdf')
 
     return 0
 
-    def SendReport(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Code, ReportFile, CreditOffered = False, NamesFile = None): # Note that unlike other email send functions, this one takes values, not a series as arguments
+    def SendReport(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Code, ReportFile, NamesFile = None): # Note that unlike other email send functions, this one takes values, not a series as arguments
         msg = MIMEMultipart('alternative')
         msg['From'] = CPERLEmail
         msg['To'] = InstructorEmail
@@ -339,8 +350,17 @@ def PrepareReport(Row):
     		   Thank you again for participating in the PLIC. Please find attached a copy of the report summarizing the PLIC
     		   results for your course, {Course} ({Code}). Additionally, if you indicated to us that you are offering students credit
                for completing the survey we have included a CSV file with their names here.\n\n
-    		   We are continuing to test and improve our new report generation system, so please let us know by replying to this
-    		   email if you have any questions, comments, or suggestions regarding this new report format.\n\n
+
+               We have recently begun developing an online interactive dashboard where instructors can explore their data in more
+               depth. The dashboard is currently available at:\n\n
+
+               http://colewalsh295.shinyapps.io/PLIC-DataExplorer\n\n
+
+               You can also download de-identified data from this dashboard (if you would like identifiable data from your class
+               please reply to this email with a copy of Institutional Review Board approval from your institution).
+
+               We are continuing to test this new dashboard to better improve user experiences, so please let us know by replying
+               to this email if you have any questions, comments, or suggestions regarding this new dashboard and/or new report format.\n\n
 
     		   Thank you,\n
     		   Cornell Physics Education Research Lab\n\n
@@ -352,11 +372,21 @@ def PrepareReport(Row):
     	  <head></head>
     	  <body>
     		<p>Dear Dr. {First} {Last},<br><br>
+
     		   Thank you again for participating in the PLIC. Please find attached a copy of the report summarizing the PLIC
     		   results for your course, {Course} ({Code}). Additionally, if you indicated to us that you are offering students credit
                for completing the survey we have included a CSV file with their names here.<br><br>
-    		   We are continuing to test and improve our new report generation system, so please let us know by replying to this
-    		   email if you have any questions, comments, or suggestions regarding this new report format.<br><br>
+
+               We have recently begun developing an online interactive dashboard where instructors can explore their data in more
+               depth. The dashboard is currently available at:<br><br>
+
+               http://colewalsh295.shinyapps.io/PLIC-DataExplorer<br><br>
+
+               You can also download de-identified data from this dashboard (if you would like identifiable data from your class
+               please reply to this email with a copy of Institutional Review Board approval from your institution).
+
+               We are continuing to test this new dashboard to better improve user experiences, so please let us know by replying
+               to this email if you have any questions, comments, or suggestions regarding this new dashboard and/or new report format.
 
     		   Thank you,<br>
     		   Cornell Physics Education Research Lab<br><br>
@@ -383,7 +413,85 @@ def PrepareReport(Row):
         att_pdf.add_header('Content-Disposition', 'attachment', filename = ReportFile)
         msg.attach(att_pdf)
 
-        if(CreditOffered == True):
+        if(NamesFile is not None):
+            f_csv=open(NamesFile, 'rb')
+            att_csv = MIMEApplication(f_csv.read(), _subtype="csv")
+            f_csv.close()
+            att_csv.add_header('Content-Disposition', 'attachment', filename = NamesFile)
+            msg.attach(att_csv)
+
+        server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
+        server.starttls()
+        server.login(UserEmail, EmailPassword)
+        server.sendmail(CPERLEmail, [InstructorEmail, CPERLEmail], msg.as_string())
+        #server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+        server.quit()
+
+        return 0
+
+    def SendErrorEmail(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Code, NamesFile = None): # Note that unlike other email send functions, this one takes values, not a series as arguments
+        msg = MIMEMultipart('alternative')
+        msg['From'] = CPERLEmail
+        msg['To'] = InstructorEmail
+        #msg['To'] = CPERLEmail
+        msg['Cc'] = CPERLEmail
+        msg['Subject'] = "PLIC Report"
+
+        # Create the body of the message (a plain-text and an HTML version).
+        text = """
+               Dear Dr. {First} {Last},\n\n
+
+               Thank you again for participating in the PLIC. Unfortunately, fewer than 5 students took each survey so we are unable to
+               provide a summary of your students' performance as the data may be identifiable. If you indicated to us that you are
+               offering students credit for completing the survey we have included a CSV file with their names here. Additionally,
+               if you would like to receive a report of your students' performance and/or identifiable data from your class please
+               reply to this email with a copy of Institutional Review Board approval from your institution.\n\n
+
+               We are continuing to test and improve our new report generation system, so please let us know by replying to this
+               email if you have any questions, comments, or suggestions regarding this new report format.\n\n
+
+               Thank you,\n
+               Cornell Physics Education Research Lab\n\n
+               This message was sent by an automated system.\n
+               """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
+
+        html = """\
+        <html>
+          <head></head>
+          <body>
+            <p>Dear Dr. {First} {Last},<br><br>
+               Thank you again for participating in the PLIC. Unfortunately, fewer than 5 students took each survey so we are unable to
+               provide a summary of your students' performance as the data may be identifiable. If you indicated to us that you are
+               offering students credit for completing the survey we have included a CSV file with their names here. Additionally,
+               if you would like to receive a report of your students' performance and/or identifiable data from your class please
+               reply to this email with a copy of Institutional Review Board approval from your institution.<br><br>
+
+               Thank you,<br>
+               Cornell Physics Education Research Lab<br><br>
+               This message was sent by an automated system.
+            </p>
+          </body>
+        </html>
+        """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
+
+
+        # Record the MIME types of both parts - text/plain and text/html.
+        part1 = MIMEText(text, 'plain')
+        part2 = MIMEText(html, 'html')
+
+        # Attach parts into message container.
+        # According to RFC 2046, the last part of a multipart message, in this case
+        # the HTML message, is best and preferred.
+        msg.attach(part1)
+        msg.attach(part2)
+
+        f_pdf = open(ReportFile, 'rb')
+        att_pdf = MIMEApplication(f_pdf.read(), _subtype = "pdf")
+        f_pdf.close()
+        att_pdf.add_header('Content-Disposition', 'attachment', filename = ReportFile)
+        msg.attach(att_pdf)
+
+        if(NamesFile is not None):
             f_csv=open(NamesFile, 'rb')
             att_csv = MIMEApplication(f_csv.read(), _subtype="csv")
             f_csv.close()
