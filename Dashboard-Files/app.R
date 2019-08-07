@@ -167,7 +167,7 @@ dhead = dashboardHeader(title = "PLIC Dashboard")
 # Set up the sidebar which links to two pages
 dside = dashboardSidebar(sidebarMenu(
   radioButtons('matched', 'Type of Data:', choices = c('Matched', 'All Valid')),
-  menuItem("View of your class", tabName = "Your_Class", icon = icon("dashboard")),
+  menuItem("View your class", tabName = "Your_Class", icon = icon("dashboard")),
   menuItem(HTML("Compare two of<br>your classes"), tabName = "Compare_Classes", icon = icon("dashboard")),
   menuItem(HTML("Compare your class<br>to other classes"), tabName = "Compare_Overall", 
            icon = icon("dashboard"))
