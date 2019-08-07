@@ -10,7 +10,7 @@ import datetime
 
 # Setting user Parameters
 global MainFolder, DataCenter, baseURL, apiToken, CPERLEmail, UserEmail
-apiToken = '5N2AgSqOjUd5mqlhNR3qLkMFY0eDAEv9Y9gnADds'
+# apiToken = Main API token for communicating with qualtrics
 # SharedCole = User Id for a shared user
 # SharedKatherine = User Id for a shared user
 # SharedUsers = [SharedCole, SharedKatherine] # Users to share surveys with in Qualtrics from main account
