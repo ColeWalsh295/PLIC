@@ -2,19 +2,27 @@
 #!c:/Python/python3_6.exe -u
 
 import pandas as pd
+from urllib.request import Request, urlopen
+import time
 import requests
 import zipfile
 import json
 import io
 import datetime
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
+import os
+import sys
 
 # Setting user Parameters
-global MainFolder, DataCenter, baseURL, apiToken, CPERLEmail, UserEmail
-# apiToken = Main API token for communicating with qualtrics
+global apiToken, MainFolder, DataCenter, baseURL, ChangeURL, CIS_SurveyID, ChangeDates_SurveyID, CPERLEmail, UserEmail, EmailPassword
+apiToken = #############################
 # SharedCole = User Id for a shared user
 # SharedKatherine = User Id for a shared user
-# SharedUsers = [SharedCole, SharedKatherine] # Users to share surveys with in Qualtrics from main account
-MainFolder = 'C:/PLIC/'
+SharedUsers = [] # Users to share surveys with in Qualtrics from main account
+MainFolder = 'C:/Users/Cole/Documents/GitHub/PLIC-Tools/Automation-Files'
 DataCenter = 'cornell'
 baseURL = "https://{0}.qualtrics.com/API/v3/responseexports/".format(DataCenter)
 ChangeURL = "https://{0}.qualtrics.com/jfe/form/SV_9QDl20NjVC3w0uN".format(DataCenter)
@@ -24,66 +32,66 @@ ChangeDates_SurveyID = "SV_9QDl20NjVC3w0uN"
 
 CPERLEmail = 'cperl@cornell.edu' # Shared CPERL email address
 UserEmail = 'as-phy-edresearchlab@cornell.edu' # User email address
-# EmailPassword = User password
+EmailPassword = ##############################
 
-Master_df = pd.read_csv('MasterCourseData.csv') # Read in local master data file with dates information
+def main():
+    Master_df = pd.read_csv('MasterCourseData.csv') # Read in local master data file with dates information
 
-CIS_Survey_Name = DownloadResponses(SurveyID) # Course Information Survey downloaded as Course_Information_Survey.csv (or whatever name is used in qualtrics)
-CIS_df = pd.read_csv(CIS_Survey_Name, skiprows = [1, 2])
+    CIS_Survey_Name = DownloadResponses(CIS_SurveyID) # Course Information Survey downloaded as Course_Information_Survey.csv (or whatever name is used in qualtrics)
+    CIS_df = pd.read_csv(CIS_Survey_Name + '.csv', skiprows = [1, 2])
 
-CIS_df = CIS_df.loc[~(CIS_df['ResponseID'].isin(Master_df['ID'])) & (CIS_df['Finished'] == 1) & pd.notnull(CIS_df['Q11_v2']), :] # Get new entries by instructors who completed the CIS online and provided a post-survey end date
-CIS_df = CleanNewData(CIS_df)
+    CIS_df = CIS_df.loc[~(CIS_df['ResponseID'].isin(Master_df['ID'])) & (CIS_df['Finished'] == 1) & pd.notnull(CIS_df['Q11_v2']), :] # Get new entries by instructors who completed the CIS online and provided a post-survey end date
+    CIS_df = CleanNewData(CIS_df)
 
-if not CIS_df.empty:
+    if not CIS_df.empty:
+        # Make Pre-, Mid-, and Post- surveys, send Pre-Survey
+        CIS_df['Post-Survey ID'] = CIS_df.apply(MakeSurvey, axis = 1, args = ('POST',))
+        CIS_df['Mid-Survey ID'] = CIS_df.apply(lambda row: MakeSurvey(row, 'MID') if row['Mid-Survey Close Date'] != '' else '', axis = 1)
+        CIS_df['Pre-Survey ID'] = CIS_df.apply(lambda row: MakeSurvey(row, 'PRE') if row['Pre-Survey Close Date'] != '' else '', axis = 1)
+        CIS_df['Survey Creation Date'] = time.strftime("%d-%b-%Y %H:%M:%S",time.localtime())
+        for User in SharedUsers: # Share newly created surveys with other researchers
+            CIS_df['Post-Survey ID'].apply(ShareSurvey, args = (User,))
+            CIS_df['Mid-Survey ID'].apply(lambda x: ShareSurvey(x['Mid-Survey ID'], User) if x['Mid-Survey ID'] != '' else -1)
+            CIS_df['Pre-Survey ID'].apply(lambda x: ShareSurvey(x['Pre-Survey ID'], User) if x['Pre-Survey ID'] != '' else -1)
+        Pre_df = CIS_df.loc[CIS_df['Pre-Survey ID'] != '', :]
+        if not Pre_df.empty:
+            Pre_df['Pre-Survey ID'].apply(ActivateSurvey) # Activate newly created PRE-surveys
+            Pre_df.apply(SendPreSurvey, axis = 1) # Send out any newly created PRE-surveys
+            Pre_df['Pre-Survey Sent'] =  time.strftime("%d-%b-%Y %H:%M:%S",time.localtime())
+            CIS_df.update(Pre_df) # Update CIS with new PRE-survey information
 
-    # Make Pre-, Mid-, and Post- surveys, send Pre-Survey
-    CIS_df['Post-Survey ID'] = CIS_df.apply(MakeSurvey, axis = 1, args = ('POST',))
-    CIS_df['Mid-Survey ID'] = CIS_df.apply(lambda row: MakeSurvey(row, 'MID') if row['Mid-Survey Close Date'] != '' else '', axis = 1)
-    CIS_df['Pre-Survey ID'] = CIS_df.apply(lambda row: MakeSurvey(row, 'PRE') if row['Mid-Survey Close Date'] != '' else '', axis = 1)
-    CIS_df['Survey Creation Date'] = time.strftime("%d-%b-%Y %H:%M:%S",time.localtime())
-    for User in SharedUsers: # Share newly created surveys with other researchers
-        CIS_df['Post-Survey ID'].apply(ShareSurvey, args = (User,))
-        CIS_df['Mid-Survey ID'].apply(lambda x: ShareSurvey(x['Mid-Survey ID'], User) if x['Mid-Survey ID'] != '' else -1)
-        CIS_df['Pre-Survey ID'].apply(lambda x: ShareSurvey(x['Pre-Survey ID'], User) if x['Mid-Survey ID'] != '' else -1)
-    Pre_df = CIS_df.loc[CIS_df['Pre-Survey ID'] != '', 'Pre-Survey ID']
-    if not Pre_df.empty:
-        Pre_df.apply(ActivateSurvey) # Activate newly created PRE-surveys
-        Pre_df.apply(SendPreSurvey) # Send out any newly created PRE-surveys
-        Pre_df['Pre-Survey Close Date'] = Pre_df['Pre-Survey Close Date'].apply(lambda x: x.strftime("%d-%b-%Y"))
-        Pre_df['Pre-Survey Sent'] =  time.strftime("%d-%b-%Y %H:%M:%S",time.localtime())
-        CIS_df = CIS_df.update(Pre_df) # Update CIS with new PRE-survey information
+        Master_df = pd.concat([Master_df, CIS_df], axis = 0, join = 'outer').reset_index(drop = True).loc[:, Master_df.columns] # Concatenate old and new data...
+        Master_df.to_csv('MasterCourseData.csv', index = False) #...and write it back to the master file
 
-    Master_df = pd.concat([Master_df, CIS_df], axis = 0, join = 'outer').reset_index(drop = True).loc[:, Master_df.columns] # Concatenate old and new data...
+    # os.remove('Course_Information_Survey.csv')
+
+    ChangeDatesFile = DownloadResponses(ChangeDates_SurveyID)
+    Changes_df = pd.read_csv(ChangeDatesFile + '.csv', skiprows = [1, 2]).rename(columns = {'Q1':'InstructorID'})
+
+    MasterChanges_df = pd.read_csv('ChangeLog.csv')
+    Changes_df = Changes_df[(~Changes_df['ResponseID'].isin(MasterChanges_df['ResponseID'])) & (Changes_df['Finished'] == 1)] # Get new changes to implement
+    Changes_df = Master_df.merge(Changes_df, left_on = 'ID', right_on = 'InstructorID', how = 'inner')
+
+    if not Changes_df.empty:
+        Changes_df = Changes_df.apply(ChangeDates, axis = 1, args = ('Pre'))
+        Changes_df = Changes_df.apply(ChangeDates, axis = 1, args = ('Mid'))
+        Changes_df = Changes_df.apply(ChangeDates, axis = 1, args = ('Post'))
+
+        Changes_df['Time Updated'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
+        MasterChanges_df = pd.concat([MasterChanges_df, Changes_df], axis = 0, join = 'inner')
+        MasterChanges_df.to_csv('ChangeLog.csv')
+        Master_df = Master_df.update(Changes_df)
+
+    Master_df = SurveyAdministration(Master_df, 'Pre') # Check survey reminders and close dates for PRE-survey
+    Master_df = SurveyAdministration(Master_df, 'Mid') # Check survey reminders and close dates for MID-survey
+    Master_df = SurveyAdministration(Master_df, 'Post') # Check survey reminders and close dates for POST-survey
+
+    Report_df = Master_df.loc[(pd.isnull(Master_df['Report Sent'])) & (pd.notnull(Master_df['Post-Survey Closed']))] # Get classes that are ready to receive reports
+    Report_df.apply(PrepareReport, axis = 1)
+    Report_df['Report Sent'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
+    Master_df.update(Report_df) # Update master file with sent reports...
+    os.chdir(MainFolder)
     Master_df.to_csv('MasterCourseData.csv', index = False) #...and write it back to the master file
-
-os.remove('Course_Information_Survey.csv')
-
-ChangeDatesFile = DownloadResponses(ChangeDates_SurveyID)
-Changes_df = pd.read_csv(ChangeDatesFile, skiprows = [1, 2]).rename(columns = {'Q1':'InstructorID'})
-
-MasterChanges_df = pd.read_csv('ChangeLog.csv')
-Changes_df = Changes_df[(~Changes_df['ResponseID'].isin(MasterChanges_df['ResponseID'])) & (Changes_df['Finished'] == 1)] # Get new changes to implement
-Changes_df = Master_df.merge(Changes_df, left_on = 'ID', right_on = 'InstructorID', how = 'inner')
-
-if not Changes_df.empty:
-    Changes_df = Changes_df.apply(ChangeDates, axis = 1, args = ('Pre'))
-    Changes_df = Changes_df.apply(ChangeDates, axis = 1, args = ('Mid'))
-    Changes_df = Changes_df.apply(ChangeDates, axis = 1, args = ('Post'))
-Changes_df['Time Updated'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
-MasterChanges_df = pd.concat([MasterChanges_df, Changes_df], axis = 0, join = 'inner')
-MasterChanges_df.to_csv('ChangeLog.csv')
-Master_df = Master_df.update(Changes_df)
-
-Master_df = SurveyAdministration(Master_df, 'Pre') # Check survey reminders and close dates for PRE-survey
-Master_df = SurveyAdministration(Master_df, 'Mid') # Check survey reminders and close dates for MID-survey
-Master_df = SurveyAdministration(Master_df, 'Post') # Check survey reminders and close dates for POST-survey
-
-Report_df = Master_df.loc[(pd.isnull(Master_df['Report Sent'])) & (pd.notnull(Master_df['Post-Survey Closed']))] # Get classes that are ready to receive reports
-Report_df.apply(PrepareReport, axis = 1)
-Report_df['Report Sent'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
-Master_df.update(Report_df) # Update master file with sent reports...
-os.chdir(MainFolder)
-Master_df.to_csv('MasterCourseData.csv', index = False) #...and write it back to the master file
 
 def CleanNewData(df):
     df = df.rename(columns = {'ResponseID':'ID', 'Q1':'First Name', 'Q2':'Last Name', 'Q3':'Email', 'Q4':'School', 'Q5':'Course Name', 'Q6':'Course Number', 'Q8':'Number Of Students'})
@@ -92,16 +100,16 @@ def CleanNewData(df):
     df[['First Name', 'Last Name', 'School', 'Course Name', 'Course Number']] = df[['First Name', 'Last Name', 'School', 'Course Name', 'Course Number']].apply(lambda x: x.str.replace('[^0-9a-zA-Z]+', '_'))
 
     # Check and fix (if necessary) dates indicated
-    df['Pre-Survey Close Date'] = CheckDates(df['Q10_v2'], 'PRE')
+    df['Pre-Survey Close Date'] = CheckDates(df['Q10_v2'], 'PRE').apply(lambda x: x.strftime("%d-%b-%Y") if not pd.isnull(x) else '')
     df['Mid-Survey Close Date'] = CheckDates(df['Q41_v2'], 'MID').apply(lambda x: x.strftime("%d-%b-%Y") if not pd.isnull(x) else '')
     df['Post-Survey Close Date'] = CheckDates(df['Q11_v2'], 'POST')
-    df['Course Year'] = df['Post-Survey Close Date'].strftime('%Y')
+    df['Course Year'] = df['Post-Survey Close Date'].dt.strftime('%Y')
     df['Post-Survey Close Date'] = df['Post-Survey Close Date'].apply(lambda x: x.strftime("%d-%b-%Y"))
 
     df['Credit Offered'] = df['Q12'] == 1 # Check whether credit is offered to students
-    df['Number of Surveys'] = df['Q45'].astype(int).fillna(df['Q40'].astype(int) + 1) # Check how many survey are being sent
-    df['Course Type'] = df['Q7'].astype(int).map({1:'Intro - Algebra', 2:'Intro - Calculus', 3:'Sophomore', 4:'Junior', 5:'Senior') # Map course type to strings
-    df['Season'] = df['Q9a'].astype(int).fillna(df['Q9b'].astype(int).map({2:6, 3:2, 4:3, 5:4})).map({1:'Fall', 2:'Spring', 3:'Summer', 4:'Year', 5:'Winter'}) # Map season to strings using quarter data to fill in semester data
+    df['Number of Surveys'] = df['Q45'].fillna(df['Q40'].fillna(0) + 1) # Check how many survey are being sent
+    df['Course Type'] = df['Q7'].astype(int).map({1:'Intro - Algebra', 2:'Intro - Calculus', 3:'Sophomore', 4:'Junior', 5:'Senior'}) # Map course type to strings
+    df['Season'] = df['Q9a'].astype(int).fillna(df['Q9b'].fillna(0).astype(int).map({2:6, 3:2, 4:3, 5:4})).map({1:'Fall', 2:'Spring', 3:'Summer', 4:'Year', 6:'Winter'}) # Map season to strings using quarter data to fill in semester data
 
     return df
 
@@ -116,21 +124,22 @@ def CheckDates(Series, Survey):
         Series[~Series.str.match(Pattern)] = (datetime.datetime.now() + datetime.timedelta(days = Delta)).strftime('%m-%d-%Y')
         CheckDates(Series, Survey)
 
-    return Series
+    return Series_dt
 
 def SurveyAdministration(df, Survey):
     Master_df = df.copy()
-    Survey_df = df.loc[(pd.notnull(df[Survey + '-Survey ID'])) & (pd.isnull(MasterDF.loc[Index, 'Pre-Survey Closed'])), :]
+    Survey_df = df.loc[(pd.notnull(df[Survey + '-Survey ID'])) & (pd.isnull(Master_df[Survey + '-Survey Closed'])), :]
     CurrentTime = datetime.datetime.now()
     Survey_df['Close Date'] = pd.to_datetime(Survey_df[Survey + '-Survey Close Date'])
 
-    Survey_Memo_df = Survey_df.loc[(pd.isnull(Survey_df[Survey + '-Survey Sent'])) & (pd.isnull(Survey_df[Survey + 'Mid-Survey Memo'])) & (CurrentTime >= Survey_df['Close Date'] - datetime.timedelta(days = 16)), :] # Get only the classes that should now receive a momo
-    if not Survey_Memo_df.empty:
-        if Survey != 'Pre':
-            Survey_Memo_df.apply(SendSurveyMemo, axis = 1, args = (Survey,)) # Send out appropriate memos alerting instructors to surveys that will be activated soon
-            Survey_Memo_df[Survey + '-Survey Memo'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
-            Master_df.update(Survey_Memo_df) # Update master file with sent memos...
-            Master_df.to_csv('MasterCourseData.csv', index = False) #...and write it back to the master file
+    if Survey != 'Pre':
+        Survey_Memo_df = Survey_df.loc[(pd.isnull(Survey_df[Survey + '-Survey Sent'])) & (pd.isnull(Survey_df[Survey + '-Survey Memo'])) & (CurrentTime >= Survey_df['Close Date'] - datetime.timedelta(days = 16)), :] # Get only the classes that should now receive a momo
+        if not Survey_Memo_df.empty:
+            if Survey != 'Pre':
+                Survey_Memo_df.apply(SendSurveyMemo, axis = 1, args = (Survey,)) # Send out appropriate memos alerting instructors to surveys that will be activated soon
+                Survey_Memo_df[Survey + '-Survey Memo'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
+                Master_df.update(Survey_Memo_df) # Update master file with sent memos...
+                Master_df.to_csv('MasterCourseData.csv', index = False) #...and write it back to the master file
 
     Survey_Send_df = Survey_df.loc[(CurrentTime >= Survey_df['Close Date'] - datetime.timedelta(days = 14)) & (pd.isnull(Survey_df[Survey + '-Survey Sent'])), :] # Get only the classes that should now their survey
     if not Survey_Send_df.empty:
@@ -156,7 +165,7 @@ def SurveyAdministration(df, Survey):
 
     Survey_Close_df = Survey_df.loc[CurrentTime >= Survey_df['Close Date'] + datetime.timedelta(hours = 23, minutes = 59, seconds = 59), :]
     if not Survey_Close_df.empty:
-        Survey_Close_df[Survey '-Survey ID'].apply(lambda x: ActivateSurvey(x, Active = False))
+        Survey_Close_df[Survey + '-Survey ID'].apply(lambda x: ActivateSurvey(x, Active = False))
         Survey_Close_df['N_Students'] = Survey_Close_df.apply(GetNumberStudents, axis = 1, args = (Survey,))
         if Survey != 'Post':
             Survey_Close_df.apply(SendSurveyClose, axis = 1, args = (Survey,))
@@ -189,7 +198,8 @@ def ChangeDates(Row, Survey):
         msg = MIMEMultipart('alternative')
         msg['Subject'] = "Changes to Survey Dates"
         msg['From'] = CPERLEmail
-        msg['To'] = InstructorEmail
+        msg['To'] = CPERLEmail
+        # msg['To'] = InstructorEmail
 
         if(pd.notnull(PreClose)):
             PreClose = datetime.datetime.strptime(PreClose, "%d-%b-%Y")
@@ -265,7 +275,8 @@ def ChangeDates(Row, Survey):
         server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
         server.starttls()
         server.login(UserEmail, EmailPassword)
-        server.sendmail(CPERLEmail, InstructorEmail, msg.as_string())
+        server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+        # server.sendmail(CPERLEmail, InstructorEmail, msg.as_string())
         server.quit()
 
         return 0
@@ -338,8 +349,8 @@ def PrepareReport(Row, ErrorEmail = False):
     def SendReport(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Code, ReportFile, NamesFile = None): # Note that unlike other email send functions, this one takes values, not a series as arguments
         msg = MIMEMultipart('alternative')
         msg['From'] = CPERLEmail
-        msg['To'] = InstructorEmail
-        #msg['To'] = CPERLEmail
+        msg['To'] = CPERLEmail
+        # msg['To'] = InstructorEmail
         msg['Cc'] = CPERLEmail
         msg['Subject'] = "PLIC Report"
 
@@ -423,8 +434,8 @@ def PrepareReport(Row, ErrorEmail = False):
         server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
         server.starttls()
         server.login(UserEmail, EmailPassword)
-        server.sendmail(CPERLEmail, [InstructorEmail, CPERLEmail], msg.as_string())
-        #server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+        server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+        # server.sendmail(CPERLEmail, [InstructorEmail, CPERLEmail], msg.as_string())
         server.quit()
 
         return 0
@@ -432,8 +443,8 @@ def PrepareReport(Row, ErrorEmail = False):
     def SendErrorEmail(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Code, NamesFile = None): # Note that unlike other email send functions, this one takes values, not a series as arguments
         msg = MIMEMultipart('alternative')
         msg['From'] = CPERLEmail
-        msg['To'] = InstructorEmail
-        #msg['To'] = CPERLEmail
+        msg['To'] = CPERLEmail
+        # msg['To'] = InstructorEmail
         msg['Cc'] = CPERLEmail
         msg['Subject'] = "PLIC Report"
 
@@ -501,8 +512,8 @@ def PrepareReport(Row, ErrorEmail = False):
         server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
         server.starttls()
         server.login(UserEmail, EmailPassword)
-        server.sendmail(CPERLEmail, [InstructorEmail, CPERLEmail], msg.as_string())
-        #server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+        server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+        # server.sendmail(CPERLEmail, [InstructorEmail, CPERLEmail], msg.as_string())
         server.quit()
 
         return 0
@@ -514,16 +525,15 @@ def DownloadResponses(SurveyID):
     # Setting static parameters
     requestCheckProgress = 0
     progressStatus = "in progress"
-    baseUrl = "https://{0}.qualtrics.com/API/v3/responseexports/".format(dataCenter)
     headers = {
         "content-type": "application/json",
         "x-api-token": apiToken,
         }
 
     # Step 1: Creating Data Export
-    downloadRequestUrl = baseUrl
-    downloadRequestPayload = '{"format":"' + fileFormat + '","surveyId":"' + surveyId + '"}'
-    downloadRequestResponse = requests.request("POST", downloadRequestUrl, data=downloadRequestPayload, headers=headers)
+    downloadRequestUrl = baseURL
+    downloadRequestPayload = '{"format":"' + fileFormat + '","surveyId":"' + SurveyID + '"}'
+    downloadRequestResponse = requests.request("POST", downloadRequestUrl, data = downloadRequestPayload, headers = headers)
     progressId = downloadRequestResponse.json()["result"]["id"]
 
     # Step 2: Checking on Data Export Progress and waiting until export is ready
@@ -531,27 +541,27 @@ def DownloadResponses(SurveyID):
     isFile = None
 
     while requestCheckProgress < 100 and progressStatus is not "complete" and isFile is None:
-        requestCheckUrl = baseUrl + progressId
-        requestCheckResponse = requests.request("GET", requestCheckUrl, headers=headers)
+        requestCheckUrl = baseURL + progressId
+        requestCheckResponse = requests.request("GET", requestCheckUrl, headers = headers)
         isFile = (requestCheckResponse.json()["result"]["file"])
         requestCheckProgress = requestCheckResponse.json()["result"]["percentComplete"]
 
     # Step 3: Downloading file
-    requestDownloadUrl = baseUrl + progressId + '/file'
-    requestDownload = requests.request("GET", requestDownloadUrl, headers=headers, stream=True)
+    requestDownloadUrl = baseURL + progressId + '/file'
+    requestDownload = requests.request("GET", requestDownloadUrl, headers = headers, stream = True)
 
     # Step 4: Unzipping the file
     try:
         zipfile.ZipFile(io.BytesIO(requestDownload.content)).extractall()
-        os.remove("RequestFile.zip")
+    #     os.remove("RequestFile.zip")
     except zipfile.BadZipfile:
         print("Bad Zip File, trying again...")
-        os.remove("RequestFile.zip")
+    #     os.remove("RequestFile.zip")
         DownloadResponses(SurveyID)
 
     return GetSurveyName(SurveyID)
 
-def GetNumberStudents(Row, Survey, DataType):
+def GetNumberStudents(Row, Survey):
     # Move to the specific course directory to download responses
     path = "C:/PLIC/" + Row['Season'] + str(Row['Course Year']) + "Files/" + Row['School'] + '_' + str(Row['Course Number']) + '_' + Row['Last Name'] + '_' + Row['ID']
 
@@ -669,7 +679,8 @@ def ActivateSurvey(SurveyID, Active = True):
 def SendSurveyMemo(Row, MidPost):
     msg = MIMEMultipart('alternative')
     msg['From'] = CPERLEmail
-    msg['To'] = Row['Email']
+    msg['To'] = CPERLEmail
+    # msg['To'] = Row['Email']
     msg['Subject'] = "PLIC {}-Survey Memo".format(MidPost)
 
     SurveyOpenDate = (Row['Close Date'] - datetime.timedelta(days = 14)).strftime("%d-%b-%Y %H:%M:%S")
@@ -743,7 +754,8 @@ def SendSurveyMemo(Row, MidPost):
     server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
     server.starttls()
     server.login(UserEmail, EmailPassword)
-    server.sendmail(CPERLEmail, Row['Email'], msg.as_string())
+    server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+    # server.sendmail(CPERLEmail, Row['Email'], msg.as_string())
     server.quit()
 
     return 0
@@ -751,12 +763,13 @@ def SendSurveyMemo(Row, MidPost):
 def SendPreSurvey(Row):
     msg = MIMEMultipart('alternative')
     msg['From'] = CPERLEmail
-    msg['To'] = Row['Email']
+    msg['To'] = CPERLEmail
+    # msg['To'] = Row['Email']
     msg['Cc'] = CPERLEmail
     msg['Subject'] = " PLIC Pre-Instruction Survey Link"
 
     SurveyURL = "https://{0}.qualtrics.com/jfe/form/".format(DataCenter) + Row['Pre-Survey ID']
-    SurveyCloseDate = (Row['Pre-Survey Close Date'] + datetime.timedelta(hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
+    SurveyCloseDate = (pd.to_datetime(Row['Pre-Survey Close Date']) + datetime.timedelta(hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
 
     text = """
             Dear Dr. {First} {Last},\n\n
@@ -833,7 +846,8 @@ def SendPreSurvey(Row):
     server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
     server.starttls()
     server.login(UserEmail,EmailPassword)
-    server.sendmail(CPERLEmail, [Row['Email'], CPERLEmail], msg.as_string())
+    server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+    # server.sendmail(CPERLEmail, [Row['Email'], CPERLEmail], msg.as_string())
     server.quit()
 
     return 0
@@ -841,7 +855,8 @@ def SendPreSurvey(Row):
 def SendSurvey(Row, MidPost):
     msg = MIMEMultipart('alternative')
     msg['From'] = CPERLEmail
-    msg['To'] = Row['Email']
+    msg['To'] = CPERLEmail
+    # msg['To'] = Row['Email']
     msg['Cc'] = CPERLEmail
     msg['Subject'] = "PLIC {}-Survey link".format(MidPost)
 
@@ -918,7 +933,8 @@ def SendSurvey(Row, MidPost):
     server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
     server.starttls()
     server.login(UserEmail, EmailPassword)
-    server.sendmail(CPERLEmail, [Row['Email'], CPERLEmail], msg.as_string())
+    server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+    # server.sendmail(CPERLEmail, [Row['Email'], CPERLEmail], msg.as_string())
     server.quit()
 
     return 0
@@ -926,7 +942,8 @@ def SendSurvey(Row, MidPost):
 def ZeroResponseEmail(Row, Survey):
     msg = MIMEMultipart('alternative')
     msg['From'] = CPERLEmail
-    msg['To'] = Row['Email']
+    msg['To'] = CPERLEmail
+    # msg['To'] = Row['Email']
     msg['Subject'] = "There have been zero responses to the PLIC"
 
     SurveyURL = SurveyURL = "https://{0}.qualtrics.com/jfe/form/".format(DataCenter) + Row[Survey + '-Survey ID']
@@ -1006,13 +1023,15 @@ def ZeroResponseEmail(Row, Survey):
     server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
     server.starttls()
     server.login(UserEmail, EmailPassword)
-    server.sendmail(CPERLEmail, Row['Email'], msg.as_string())
+    server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+    # server.sendmail(CPERLEmail, Row['Email'], msg.as_string())
     server.quit()
 
 def SendSurveyClose(Row, PreMid):
     msg = MIMEMultipart('alternative')
     msg['From'] = CPERLEmail
-    msg['To'] = Row['Email']
+    msg['To'] = CPERLEmail
+    # msg['To'] = Row['Email']
     msg['Subject'] = "PLIC {}-Instruction Survey Now Closed".format(PreMid)
 
     if(Row['Number of Surveys'] == 3 and PreMid == 'Pre'):
@@ -1095,7 +1114,8 @@ def SendSurveyClose(Row, PreMid):
     server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
     server.starttls()
     server.login(UserEmail,EmailPassword)
-    server.sendmail(CPERLEmail, Row['Email'], msg.as_string())
+    server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+    # server.sendmail(CPERLEmail, Row['Email'], msg.as_string())
     server.quit()
 
     return 0
