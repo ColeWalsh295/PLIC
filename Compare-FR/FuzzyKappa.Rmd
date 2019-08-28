@@ -1,0 +1,72 @@
+```{r}
+library(tidyverse)
+library(xlsx)
+library(mc2d)
+```
+
+```{r}
+OthersList <- c('Q1b_19', 'Q1d_10', 'Q1e_12', 'Q2b_38', 'Q2d_11', 'Q2e_11', 'Q3b_10', 'Q3d_29', 'Q3e_8', 'Q4b_11')
+
+df.NH <- read.xlsx('C:/Users/Cole/Documents/GRA_Fall2017/FR_Coding/Coded/NH/Fall2017_Cornell_University_1116_Smith_POST_new_FR_NH.xlsx', sheetName = 1)
+df.NH <- df.NH[2:nrow(df.NH),] %>%
+  select(grep('(Q4b_[0-9]*$)', names(.))) %>%
+  select(-Q4b_11)
+
+df.CW <- read.xlsx('C:/Users/Cole/Documents/GRA_Fall2017/FR_Coding/Coded/CW/Fall2017_Cornell_University_1116_Smith_POST_new_FR_CW.xlsx', sheetName = 1)
+df.CW <- df.CW[2:nrow(df.CW),] %>%
+  select(grep('(Q4b_[0-9]*$)', names(.))) %>%
+  select(-Q4b_11)
+
+df.NH[!is.na(df.NH)] <- 1
+df.CW[!is.na(df.CW)] <- 1
+
+df.CW <- data.frame(sapply(df.CW, as.numeric))
+df.NH <- data.frame(sapply(df.NH, as.numeric))
+
+df.NH[is.na(df.NH)] <- 0
+df.CW[is.na(df.CW)] <- 0
+```
+
+```{r}
+CW.norm <- t(apply(df.CW, 1, function (x) x/sum(x)))
+NH.norm <- t(apply(df.NH, 1, function (x) x/sum(x)))
+
+CW.norm[is.na(CW.norm)] <- 0
+NH.norm[is.na(NH.norm)] <- 0
+
+P.obs = sum(mc2d::pmin(CW.norm, NH.norm))/nrow(CW.norm)
+P.obs
+```
+
+```{r}
+Get.Prob.Distributions <- function(df){
+  df.res = data.frame()
+  for(i in 1:ncol(df)){
+    df.temp = data.frame(t(table(df[,i])))
+    df.temp$Var1 = colnames(df)[i]
+
+
+  df.res = rbind(df.res, df.temp)
+  }
+  names(df.res) = c("Variable","Levels","Freq")
+  df.res$Freq <- df.res$Freq/nrow(df)
+  
+  return(df.res)
+}
+
+CW.freq <- Get.Prob.Distributions(CW.norm)
+NH.freq <- Get.Prob.Distributions(NH.norm)
+df.freq <- merge(x = CW.freq, y = NH.freq, by = 'Variable', all = TRUE)
+df.freq$Levels.x <- as.numeric(levels(df.freq$Levels.x))[df.freq$Levels.x]
+df.freq$Levels.y <- as.numeric(levels(df.freq$Levels.y))[df.freq$Levels.y]
+
+P.exp <- df.freq %>%
+  mutate(Exp = Freq.x * Freq.y * pmin(Levels.x, Levels.y)) %>%
+  summarize(sum(Exp)) %>%
+  pull()
+
+(P.obs - P.exp)/(1 - P.exp)
+```
+
+
+
