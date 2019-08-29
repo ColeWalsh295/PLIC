@@ -1,0 +1,71 @@
+@import url("bootstrap_Spacelab.css");
+
+/* logo */
+.skin-blue .main-header .logo {
+                      background-color: #B31B1B;
+                      }
+
+/* logo when hovered */
+.skin-blue .main-header .logo:hover {
+                      background-color: #B31B1B;
+                      }
+
+/* navbar (rest of the header) */
+.skin-blue .main-header .navbar {
+                      background-color: #B31B1B;
+                      }
+
+/* main sidebar */
+.skin-blue .main-sidebar {
+                      background-color: #222222;
+                      }
+
+/* active selected tab in the sidebarmenu */
+.skin-blue .main-sidebar .sidebar .sidebar-menu .active a{
+                      border-left-color: #B31B1B;
+                      background-color: #222222;
+                      }
+
+/* other links in the sidebarmenu */
+.skin-blue .main-sidebar .sidebar .sidebar-menu a{
+                      background-color: #222222;
+                      color: #FFFFFF;
+                      font-size: 18px;
+                      }
+
+/* other links in the sidebarmenu when hovered */
+ .skin-blue .main-sidebar .sidebar .sidebar-menu a:hover{
+                      background-color: #B31B1B;
+                      border-left-color: #B31B1B;
+                      }
+
+/* toggle button when hovered  */
+ .skin-blue .main-header .navbar .sidebar-toggle:hover{
+                      background-color: #B31B1B;
+                      }
+
+.content-wrapper, .right-side{
+  background-color: #FFFFFF;
+}
+
+.sidebar, .sidebar-menu, .sidebar-toggle{
+  padding: 0px !important;
+  margin-top: 5px;
+}
+
+/* Change text font */
+body, .form-control, .button{
+  font-size: 18px;
+}
+
+h1 {
+  color: #FFFFFF;
+}
+
+.main-header .logo, .navbar{
+  height: 60px;
+}
+
+h2{
+  font-size: 24px;
+}
