@@ -1,5 +1,6 @@
-DownloadClassData <- function(input, output, session, data) {
+DownloadClassData <- function(input, output, session, data, Type) {
   
+
   class.CR <- reactive({
     class.CR <- PLIC.CR[PLIC.CR[, 'Class_ID'] == input$classID,]
     return(class.CR)
@@ -10,6 +11,23 @@ DownloadClassData <- function(input, output, session, data) {
     data.class <- bind_rows(class.CR(), class.FR)
     return(data.class)
   })
+  
+  observe({
+    toggleState("downloadData", condition = class.CR()[1, 'Download_Available'])
+    if(Type() == 'Matched'){
+      if(!class.CR()[1, 'Matched_Available']){
+        shinyalert("Oops!", "There are too few students in the matched dataset.", type = "error")
+      } else {
+        DisableRadio(class.CR, 'Match')
+      }
+    } else if((Type() == 'All Valid')) {
+      if(!class.CR()[1, 'Valid_Available']) {
+        shinyalert("Oops!", "There are too few students the overall dataset.", type = "error")
+      } else {
+        DisableRadio(class.CR, 'Valid')
+      }
+    }
+    })
   
   data.out <- reactive({
     data.class.pre <- data.class() %>%
@@ -22,6 +40,16 @@ DownloadClassData <- function(input, output, session, data) {
                                                              'Gender', 'URM_Status', 'Class_Standing'), 
                       all = TRUE, suffixes = c('_PRE', '_POST')) %>%
       select(-c('Student.ID.Anon', 'Class_ID'))
+    data.out <- data.out %>%
+      mutate(Gender = ifelse(Gender_Available_Download_PRE | Gender_Available_Download_POST, 
+                             Gender, NA_character_),
+             URM_Status = ifelse(URM_Available_Download_PRE | URM_Available_Download_POST, 
+                                 URM_Status, NA_character_),
+             Major = ifelse(Major_Available_Download_PRE | Major_Available_Download_POST, 
+                            Major, NA_character_),
+             Class_Standing = ifelse(Class_Standing_Available_Download_PRE | 
+                                       Class_Standing_Available_Download_POST, Class_Standing, NA_character_)) %>%
+      select(names(Header.df))
     data.out[is.na(data.out)] <- ''
     data.out <- rbind(Header.df, data.out)
     return(data.out)
@@ -37,7 +65,13 @@ DownloadClassData <- function(input, output, session, data) {
   )
   
   df.return <- reactive({
-    df.return <- data()[data()[, 'Class_ID'] == input$classID,]
+    if(((Type() == 'Matched') & (class.CR()[1, 'Matched_Available'])) | 
+       ((Type() == 'All Valid') & (class.CR()[1, 'Valid_Available']))){
+      df.return <- data()[data()[, 'Class_ID'] == input$classID,]
+    } else {
+      df.return <- data()[0, ]
+      df.return[1, ] <- NA
+    }
     return(df.return)
   })
   return(df.return)
@@ -223,8 +257,20 @@ ResponsesPlot <- function(input, output, session, data, Demo = NULL, Question = 
 Demographitize <- function(demo){
   Demo <- case_when(demo == 'Gender' ~ 'Gender',
                     demo == 'Major' ~ 'Major',
-                    demo == 'URM Status' ~ 'URM_Status',
-                    demo == 'Class Standing' ~ 'Class_Standing',
+                    demo == 'URM' ~ 'URM_Status',
+                    demo == 'Class_Standing' ~ 'Class_Standing',
                     TRUE ~ 'None')
   return(Demo)
+}
+
+DisableRadio <- function(df, Type){
+  for(Option in c('Gender', 'URM', 'Major', 'Class_Standing')){
+    if(!df()[1, paste(Option, '_Available_', Type, sep = '')]){
+      shinyjs::runjs(paste("$('[type = radio][value = ", Option, "]').parent().parent().css('opacity', 0.4)", sep = ''))
+      shinyjs::runjs(paste("$('[type = radio][value = ", Option, "]').prop('disabled', true)", sep = ''))
+    } else {
+      shinyjs::runjs(paste("$('[type = radio][value = ", Option, "]').parent().parent().css('opacity', 1)", sep = ''))
+      shinyjs::runjs(paste("$('[type = radio][value = ", Option, "]').prop('disabled', false)", sep = ''))}
+  }
+  return(0)  
 }

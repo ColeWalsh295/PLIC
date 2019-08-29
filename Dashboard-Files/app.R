@@ -1,5 +1,7 @@
 library(tidyverse)
 library(shiny)
+library(shinyjs)
+library(shinyalert)
 library(shinydashboard)
 shiny_theme <- theme_classic(base_size = 18)
 library(data.table)
@@ -107,9 +109,14 @@ server = function(input, output) {
     return(df)
   })
   
+  Data.Include <- reactive({
+    Data.Include <- input$matched
+    return(Data.Include)
+  })
+  
   ### Your Class ###
   
-  PLIC.Class <- callModule(DownloadClassData, 'Class.Main.Download', data = df)
+  PLIC.Class <- callModule(DownloadClassData, 'Class.Main.Download', data = df, Type = Data.Include)
   callModule(ClassStatistics, 'Class.Main.Statistics', data = PLIC.Class)
   demographic <- reactiveVal()
   demographic <- callModule(ScalePlot, 'Class.Main.Scale', data = PLIC.Class)
@@ -118,9 +125,9 @@ server = function(input, output) {
   
   ### Compare Classes ###
   
-  PLIC.Class1 <- callModule(DownloadClassData, 'Class1.Download', data = df)
+  PLIC.Class1 <- callModule(DownloadClassData, 'Class1.Download', data = df, Type = Data.Include)
   callModule(ClassStatistics, 'Class1.Statistics', data = PLIC.Class1)
-  PLIC.Class2 <- callModule(DownloadClassData, 'Class2.Download', data = df)
+  PLIC.Class2 <- callModule(DownloadClassData, 'Class2.Download', data = df, Type = Data.Include)
   callModule(ClassStatistics, 'Class2.Statistics', data = PLIC.Class2)
 
   PLIC.Compare <- reactive({
@@ -135,7 +142,8 @@ server = function(input, output) {
   
   ### Compare to overall PLIC dataset ###
   
-  PLIC.Class.You_temp <- callModule(DownloadClassData, 'Class.You.Download', data = df)
+  PLIC.Class.You_temp <- callModule(DownloadClassData, 'Class.You.Download', data = df, 
+                                    Type = Data.Include)
   callModule(ClassStatistics, 'Class.You.Statistics', data = PLIC.Class.You_temp)
   
   PLIC.Class.You <- reactive({
@@ -182,7 +190,7 @@ dbody = dashboardBody(
 )
 
 # Combining header, sidebar, and body
-ui = dashboardPage(dhead, dside, dbody)
+ui = tagList(useShinyjs(), useShinyalert(), dashboardPage(dhead, dside, dbody))
 
 # Generating a local instance of your dashboard
 shinyApp(ui, server)

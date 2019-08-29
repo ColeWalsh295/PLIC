@@ -1,5 +1,4 @@
 DownloadClassDataUI <- function(id, label, value){
-  # Create a namespace function using the provided id
   ns <- NS(id)
 
   fluidRow(
@@ -28,7 +27,8 @@ ScalePlotUI <- function(id, Demos = TRUE){
                                         'Suggesting Follow-ups', 'Total Score')),
              br(),
              radioButtons(ns("demographic"), 'Separate by:', 
-                          choices = c('None', 'Gender', 'URM Status', 'Major', 'Class Standing'))
+                          choiceNames = c('None', 'Gender', 'URM Status', 'Major', 'Class Standing'),
+                          choiceValues = c('None', 'Gender', 'URM', 'Major', 'Class_Standing'))
       ),
       column(8, plotOutput(ns("plotScale")))
     )
