@@ -9,56 +9,54 @@ plt.style.use('seaborn-white')
 import Valid_Matched
 import Scoring
 
-def GenerateGraph(OtherPreFile, OtherPostFile, Level, Weightsdf, **Dataframes):
+def GenerateGraph(OtherPreFile, OtherPostFile, Level, ID, Weightsdf, **Dataframes):
     global NValidPost, N_Other, dfYour_Post
 
     dfOther_Pre = pd.read_csv(OtherPreFile)
-    dfOther_PreS = Scoring.CalcScore(dfOther_Pre, Weightsdf)
 
     dfOther_Post = pd.read_csv(OtherPostFile)
-    N_Other = len(dfOther_Post)
-    dfOther_PostS = Scoring.CalcScore(dfOther_Post, Weightsdf)
 
-    dfOtherS = pd.concat([dfOther_PreS, dfOther_PostS], axis = 0, join = 'inner').reset_index(drop = True) # Collect all data together for CFA model building
+    dfOther = pd.concat([dfOther_Pre, dfOther_Post], axis = 0, join = 'inner').reset_index(drop = True) # Collect all data together for CFA model building
 
-    dfOther_PreS_Level = dfOther_PreS[dfOther_PreS['Course_Level'] == Level].reset_index(drop = True) # Filter out pre cumulative data by course level
-    dfOther_PreS_Level = dfOther_PreS_Level.assign(Survey = 'PRE', Data = 'Other')
+    dfOther_Pre_Level = dfOther_Pre[dfOther_Pre['Course_Level'] == Level].reset_index(drop = True) # Filter out pre cumulative data by course level
+    dfOther_Pre_Level = dfOther_Pre_Level.assign(Survey = 'PRE', Data = 'Other')
 
-    dfOther_PostS_Level = dfOther_PostS[dfOther_PostS['Course_Level'] == Level].reset_index(drop = True) # Filter out post cumulative data by course level
-    dfOther_PostS_Level = dfOther_PostS_Level.assign(Survey = 'POST', Data = 'Other')
+    dfOther_Post_Level = dfOther_Post[dfOther_Post['Course_Level'] == Level].reset_index(drop = True) # Filter out post cumulative data by course level
+    dfOther_Post_Level = dfOther_Post_Level.assign(Survey = 'POST', Data = 'Other')
+    N_Other = len(dfOther_Post_Level)
 
     if('MID' in Dataframes.keys()): # Build class dataframe when 3 surveys are given
         NValidPre, NValidMid, NValidPost, dfYour_Pre, dfYour_Mid, dfYour_Post = Valid_Matched.ValMat(PRE = Dataframes['PRE'], MID = Dataframes['MID'], POST = Dataframes['POST'])
 
-        dfYour_PreS = Scoring.CalcScore(dfYour_Pre, Weightsdf).loc[:, 'Q1Bs':]
-        dfYour_PreS = dfYour_PreS.assign(Survey = 'PRE', Data = 'Yours')
+        dfYour_PreS = Scoring.CalcScore(dfYour_Pre, Weightsdf)
+        dfYour_PreS = dfYour_PreS.assign(Survey = 'PRE', Data = 'Yours', Class_ID = ID)
 
-        dfYour_MidS = Scoring.CalcScore(dfYour_Mid, Weightsdf).loc[:, 'Q1Bs':]
-        dfYour_MidS = dfYour_MidS.assign(Survey = 'MID', Data = 'Yours')
+        dfYour_MidS = Scoring.CalcScore(dfYour_Mid, Weightsdf)
+        dfYour_MidS = dfYour_MidS.assign(Survey = 'MID', Data = 'Yours', Class_ID = ID)
 
-        dfYour_PostS = Scoring.CalcScore(dfYour_Post, Weightsdf).loc[:, 'Q1Bs':]
-        dfYour_PostS = dfYour_PostS.assign(Survey = 'POST', Data = 'Yours')
+        dfYour_PostS = Scoring.CalcScore(dfYour_Post, Weightsdf)
+        dfYour_PostS = dfYour_PostS.assign(Survey = 'POST', Data = 'Yours', Class_ID = ID)
 
-        df_Concat = pd.concat([dfYour_PreS, dfYour_MidS, dfYour_PostS, dfOther_PreS_Level, dfOther_PostS_Level], axis = 0, join = 'inner').reset_index(drop = True) # Collect all data to be plotted into one dataframe
+        df_Concat = pd.concat([dfYour_PreS, dfYour_MidS, dfYour_PostS, dfOther_Pre_Level, dfOther_Post_Level], axis = 0, join = 'inner').reset_index(drop = True) # Collect all data to be plotted into one dataframe
     elif('PRE' in Dataframes.keys()): # Build class dataframe when 2 surveys are given
         NValidPre, NValidPost, dfYour_Pre, dfYour_Post = Valid_Matched.ValMat(PRE = Dataframes['PRE'], POST = Dataframes['POST'])
 
-        dfYour_PreS = Scoring.CalcScore(dfYour_Pre, Weightsdf).loc[:, 'Q1Bs':]
-        dfYour_PreS = dfYour_PreS.assign(Survey = 'PRE', Data = 'Yours')
+        dfYour_PreS = Scoring.CalcScore(dfYour_Pre, Weightsdf)
+        dfYour_PreS = dfYour_PreS.assign(Survey = 'PRE', Data = 'Yours', Class_ID = ID)
 
-        dfYour_PostS = Scoring.CalcScore(dfYour_Post, Weightsdf).loc[:, 'Q1Bs':]
-        dfYour_PostS = dfYour_PostS.assign(Survey = 'POST', Data = 'Yours')
+        dfYour_PostS = Scoring.CalcScore(dfYour_Post, Weightsdf)
+        dfYour_PostS = dfYour_PostS.assign(Survey = 'POST', Data = 'Yours', Class_ID = ID)
 
-        df_Concat = pd.concat([dfYour_PreS, dfYour_PostS, dfOther_PreS_Level, dfOther_PostS_Level], axis = 0, join = 'inner').reset_index(drop = True) # Collect all data to be plotted into one dataframe
+        df_Concat = pd.concat([dfYour_PreS, dfYour_PostS, dfOther_Pre_Level, dfOther_Post_Level], axis = 0, join = 'inner').reset_index(drop = True) # Collect all data to be plotted into one dataframe
     else: # Build class dataframe when only 1 survey is given
         NValidPost, dfYour_Post = Valid_Matched.ValMat(POST = Dataframes['POST'])
 
-        dfYour_PostS = Scoring.CalcScore(dfYour_Post, Weightsdf).loc[:, 'Q1Bs':]
-        dfYour_PostS = dfYour_PostS.assign(Survey = 'POST', Data = 'Yours')
+        dfYour_PostS = Scoring.CalcScore(dfYour_Post, Weightsdf)
+        dfYour_PostS = dfYour_PostS.assign(Survey = 'POST', Data = 'Yours', Class_ID = ID)
 
-        df_Concat = pd.concat([dfYour_PostS, dfOther_PreS_Level, dfOther_PostS_Level], axis = 0, join = 'inner').reset_index(drop = True) # Collect all data to be plotted into one dataframe
+        df_Concat = pd.concat([dfYour_PostS, dfOther_Pre_Level, dfOther_Post_Level], axis = 0, join = 'inner').reset_index(drop = True) # Collect all data to be plotted into one dataframe
 
-    df_Factors = Scoring.CalcFactorScores(dfOtherS, df_Concat) # Get factor scores for yours and other classes
+    df_Factors = Scoring.CalcFactorScores(dfOther, df_Concat) # Get factor scores for yours and other classes
     df_Concat = pd.concat([df_Concat, df_Factors], axis = 1, join = 'inner') # Merge the factor scores back with the question scores dataframe for yours and other classes
 
     GenerateTotalScoresGraph(df_Concat)
@@ -66,12 +64,12 @@ def GenerateGraph(OtherPreFile, OtherPostFile, Level, Weightsdf, **Dataframes):
 
     if('PRE' in Dataframes.keys()):
         dfYour_Pre['Course_Level'] = Level # Append the new pre data to the historical data for future use
-        dfOther_Pre = pd.concat([dfOther_Pre, dfYour_Pre], join = 'inner', axis = 0)
-        #dfOther_Pre.to_csv('PreSurveys_ValMat.csv', index = False)
+        dfOther_Pre = pd.concat([dfOther_Pre, dfYour_PreS], join = 'inner', axis = 0)
+        # dfOther_Pre.to_csv(OtherPreFile, index = False)
 
         dfYour_Post['Course_Level'] = Level # Append the new post data to the historical data for future use
-        dfOther_Post = pd.concat([dfOther_Post, dfYour_Post], join = 'inner', axis = 0)
-        #dfOther_Post.to_csv('PostSurveys_ValMat.csv', index = False)
+        dfOther_Post = pd.concat([dfOther_Post, dfYour_PostS], join = 'inner', axis = 0)
+        # dfOther_Post.to_csv(OtherPostFile, index = False)
 
         if('MID' in Dataframes.keys()):
             return NValidPre, NValidMid, NValidPost, dfYour_Pre, dfYour_Mid, dfYour_Post

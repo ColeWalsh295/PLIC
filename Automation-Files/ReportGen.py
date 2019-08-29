@@ -6,24 +6,24 @@ import pylatex.config as cf
 from pylatex import Document, Package, Center, NewPage, Section, MiniPage, FootnoteText, Figure, Tabular, Table, NoEscape, Itemize
 import ReportGraph
 
-def Generate(fname, width, NumReportedStudents, Course_Level, WeightsFile = 'Weights_May2019.csv', **Dataframes):
+def Generate(fname, width, NumReportedStudents, Course_Level, ID, MainFolder, WeightsFile = 'Weights_May2019.csv', **Dataframes):
 
     # Load the historical data
-    CumulativePre = 'PreSurveys_ValMat.csv'
-    CumulativePost = 'PostSurveys_ValMat.csv'
-    Weightsdf = pd.read_csv(WeightsFile).transpose()[0]
+    CumulativePre = MainFolder + 'PreSurveys_ValMat.csv'
+    CumulativePost = MainFolder + 'PostSurveys_ValMat.csv'
+    Weightsdf = pd.read_csv(MainFolder + WeightsFile).transpose()[0]
 
     # Generate graphs for 1/2/3 class surveys in comparison to other classes
     if('PRE' in Dataframes.keys()):
         if('MID' in Dataframes.keys()):
-            NumPreResponses, NumMidResponses, NumPostResponses, Predf, Middf, Postdf = ReportGraph.GenerateGraph(CumulativePre, CumulativePost, Course_Level, Weightsdf, PRE = Dataframes['PRE'],
+            NumPreResponses, NumMidResponses, NumPostResponses, Predf, Middf, Postdf = ReportGraph.GenerateGraph(CumulativePre, CumulativePost, Course_Level, ID, Weightsdf, PRE = Dataframes['PRE'],
             MID = Dataframes['MID'], POST = Dataframes['POST'])
             Middf = Middf.fillna(0)
         else: # Set mid-survey to pre-survey
-            NumPreResponses, NumPostResponses, Predf, Postdf = ReportGraph.GenerateGraph(CumulativePre, CumulativePost, Course_Level, Weightsdf, PRE = Dataframes['PRE'], POST = Dataframes['POST'])
+            NumPreResponses, NumPostResponses, Predf, Postdf = ReportGraph.GenerateGraph(CumulativePre, CumulativePost, Course_Level, ID, Weightsdf, PRE = Dataframes['PRE'], POST = Dataframes['POST'])
         Predf = Predf.fillna(0)
     else:
-        NumPostResponses, Postdf = ReportGraph.GenerateGraph(CumulativePre, CumulativePost, Course_Level, Weightsdf, POST = Dataframes['POST'])
+        NumPostResponses, Postdf = ReportGraph.GenerateGraph(CumulativePre, CumulativePost, Course_Level, ID, Weightsdf, POST = Dataframes['POST'])
     Postdf = Postdf.fillna(0)
     NumMatchedResponses = len(Postdf.index)
 
@@ -179,7 +179,7 @@ def Generate(fname, width, NumReportedStudents, Course_Level, WeightsFile = 'Wei
                             """))
 
         Questions = ['Q1b', 'Q1d', 'Q1e', 'Q2b', 'Q2d', 'Q2e', 'Q3b', 'Q3d', 'Q3e', 'Q4b']
-        StatementsSeries = pd.read_csv('Questions.csv', header = None, index_col = 0, squeeze = True)
+        StatementsSeries = pd.read_csv(MainFolder + 'Questions.csv', header = None, index_col = 0, squeeze = True)
 
         with doc.create(Center()) as centered:
             with doc.create(Table(position = 'h!')) as Tab:
@@ -226,8 +226,7 @@ def Generate(fname, width, NumReportedStudents, Course_Level, WeightsFile = 'Wei
                             For more information about the PLIC see: cperl.lassp.cornell.edu/PLIC \textbf{or} physport.org/assessments/PLIC.
                             """))
 
-    doc.generate_pdf(clean_tex = False)
-    os.remove("qgraph.png")
+    doc.generate_pdf(clean_tex = True)
     os.remove("FactorsLevel.png")
     os.remove("QuestionsLevel.png")
 

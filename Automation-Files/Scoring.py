@@ -32,7 +32,7 @@ def CalcFactorScores(df_Cumulative, df_Your):
     df_Your = df_Your.loc[:, Question_Scores]
     importr('lavaan')
     importr('semPlot')
-    gr = importr('grDevices')
+    # gr = importr('grDevices')
 
     # Perform CFA in R to get factor scores
     CFA_func = robjects.r('''
@@ -54,6 +54,6 @@ def CalcFactorScores(df_Cumulative, df_Your):
     # Convert dataframes back to python pandas dataframes
     # df_Cumulative_Scores = pandas2ri.ri2py_dataframe(CFA_func(df_Cumulative))
     df_Your_Scores = pandas2ri.ri2py_dataframe(CFA_func(df_Cumulative, df_Your))
-    gr.dev_off()
+    # gr.dev_off()
 
     return df_Your_Scores

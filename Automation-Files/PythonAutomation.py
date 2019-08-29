@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 #!c:/Python/python3_6.exe -u
 
+import numpy as np
 import pandas as pd
 from urllib.request import Request, urlopen
 import time
@@ -13,6 +14,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
+import ReportGen
 import os
 import sys
 
@@ -22,7 +24,7 @@ apiToken = #############################
 # SharedCole = User Id for a shared user
 # SharedKatherine = User Id for a shared user
 SharedUsers = [] # Users to share surveys with in Qualtrics from main account
-MainFolder = 'C:/Users/Cole/Documents/GitHub/PLIC-Tools/Automation-Files'
+MainFolder = 'C:/Users/Cole/Documents/GRA_Summer2019/Automation-Files_TestPLIC_Aug2019/'
 DataCenter = 'cornell'
 baseURL = "https://{0}.qualtrics.com/API/v3/responseexports/".format(DataCenter)
 ChangeURL = "https://{0}.qualtrics.com/jfe/form/SV_9QDl20NjVC3w0uN".format(DataCenter)
@@ -67,20 +69,22 @@ def main():
 
     ChangeDatesFile = DownloadResponses(ChangeDates_SurveyID)
     Changes_df = pd.read_csv(ChangeDatesFile + '.csv', skiprows = [1, 2]).rename(columns = {'Q1':'InstructorID'})
-
     MasterChanges_df = pd.read_csv('ChangeLog.csv')
     Changes_df = Changes_df[(~Changes_df['ResponseID'].isin(MasterChanges_df['ResponseID'])) & (Changes_df['Finished'] == 1)] # Get new changes to implement
-    Changes_df = Master_df.merge(Changes_df, left_on = 'ID', right_on = 'InstructorID', how = 'inner')
+    Changes_df = Master_df.merge(Changes_df.set_index('InstructorID'), left_on = 'ID', right_index = True, how = 'inner')
 
     if not Changes_df.empty:
-        Changes_df = Changes_df.apply(ChangeDates, axis = 1, args = ('Pre'))
-        Changes_df = Changes_df.apply(ChangeDates, axis = 1, args = ('Mid'))
-        Changes_df = Changes_df.apply(ChangeDates, axis = 1, args = ('Post'))
+        Changes_df = Changes_df.apply(ChangeDates, axis = 1, args = ('Pre',))
+        Changes_df = Changes_df.apply(ChangeDates, axis = 1, args = ('Mid',))
+        Changes_df = Changes_df.apply(ChangeDates, axis = 1, args = ('Post',))
+        Changes_df.apply(ChangesEmailSend, axis = 1)
 
         Changes_df['Time Updated'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
-        MasterChanges_df = pd.concat([MasterChanges_df, Changes_df], axis = 0, join = 'inner')
-        MasterChanges_df.to_csv('ChangeLog.csv')
-        Master_df = Master_df.update(Changes_df)
+        MasterChanges_df = pd.concat([MasterChanges_df, Changes_df], axis = 0, join = 'outer').loc[:, MasterChanges_df.columns]
+        MasterChanges_df.to_csv('ChangeLog.csv', index = False)
+        Master_df.update(Changes_df)
+        Master_df = Master_df.replace('nan', np.nan)
+        Master_df.to_csv('MasterCourseData.csv', index = False) #...and write it back to the master file
 
     Master_df = SurveyAdministration(Master_df, 'Pre') # Check survey reminders and close dates for PRE-survey
     Master_df = SurveyAdministration(Master_df, 'Mid') # Check survey reminders and close dates for MID-survey
@@ -147,7 +151,7 @@ def SurveyAdministration(df, Survey):
         if Survey == 'Pre': # Email the survey to the instructor
             Survey_Send_df.apply(SendPreSurvey, axis = 1)
         else:
-            Survey_Send.apply(SendSurvey, axis = 1, args = (Survey,))
+            Survey_Send_df.apply(SendSurvey, axis = 1, args = (Survey,))
         Survey_Send_df[Survey + '-Survey Sent'] = time.strftime("%d-%b-%Y %H:%M:%S",time.localtime())
         Master_df.update(Survey_Send_df) # Update the master file with emailed survey times...
         Master_df.to_csv('MasterCourseData.csv', index = False) #...and write it back to the master file
@@ -156,7 +160,7 @@ def SurveyAdministration(df, Survey):
     if not Survey_Reminder_df.empty:
         Survey_Reminder_df['N_Students'] = Survey_Reminder_df.apply(GetNumberStudents, axis = 1, args = (Survey,))
         os.chdir(MainFolder)
-        Survey_Reminder_df.apply(lambda row: ZeroResponseEmail(row, axis = 1, args = (Survey,)) if row['N_Students'] == 0 else ReminderEmailSend(row, axis = 1, args = (Survey,))) # Send a reminder email indicating the number of students that have responded so far
+        Survey_Reminder_df.apply(lambda row: ZeroResponseEmail(row, Survey) if row['N_Students'] == 0 else ReminderEmailSend(row, Survey), axis = 1) # Send a reminder email indicating the number of students that have responded so far
         Survey_Reminder_df['Close Date'] = Survey_Reminder_df.apply(lambda x: x['Close Date'] + datetime.timedelta(days = 3) if x['N_Students'] == 0 else x['Close Date'], axis = 1) # Move up the close date if no one hase responded yet
         Survey_Reminder_df[Survey + '-Survey Close Date'] = Survey_Reminder_df['Close Date'].dt.strftime('%d-%b-%Y')
         Survey_Reminder_df[Survey + '-Survey Reminder'] = time.strftime("%d-%b-%Y %H:%M:%S",time.localtime())
@@ -167,6 +171,7 @@ def SurveyAdministration(df, Survey):
     if not Survey_Close_df.empty:
         Survey_Close_df[Survey + '-Survey ID'].apply(lambda x: ActivateSurvey(x, Active = False))
         Survey_Close_df['N_Students'] = Survey_Close_df.apply(GetNumberStudents, axis = 1, args = (Survey,))
+        os.chdir(MainFolder)
         if Survey != 'Post':
             Survey_Close_df.apply(SendSurveyClose, axis = 1, args = (Survey,))
         Survey_Close_df[Survey + '-Survey Closed'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
@@ -178,157 +183,89 @@ def SurveyAdministration(df, Survey):
 def ChangeDates(Row, Survey):
     Dates = {'Pre':'Q2_v2', 'Mid':'Q9_v2', 'Post':'Q3_v2'}
     Reminders = {'Pre':'Q4', 'Mid':'Q8', 'Post':'Q5'}
-    if(~np.isnan(Row[Survey + '-Survey ID']) & np.isnan(Row[Survey + '-Survey Closed']) & ~np.isnan(Row[Dates[Survey]])):
+    if(pd.notna(Row[Survey + '-Survey ID']) & pd.isna(Row[Survey + '-Survey Closed']) & pd.notna(Row[Dates[Survey]])):
+        print(Survey)
         try:
-            Row[Survey + '-Survey Close Date'] = datetime.datetime.strptime(Row[Dates[Survey]], "%m-%d-%Y").strftime("%d-%b-%Y")
+            Row[Survey + '-Survey New Close Date'] = datetime.datetime.strptime(Row[Dates[Survey]], "%m-%d-%Y").strftime("%d-%b-%Y")
         except ValueError: # If an incorrectly formatted date is provided, ignore and move on
             return -1
 
         # Reset reminder email statuses if requested
         if(Row[Reminders[Survey]] == 1):
-            Row[Survey + '-Survey Reminder'] = ''
-        elif(Row[Reminders[Survey]] == 2 and np.isnan(Row[Survey + '-Survey Reminder'])):
+            Row[Survey + '-Survey Reminder Email'] = 1
+            Row[Survey + '-Survey Reminder'] = 'nan'
+        elif(Row[Reminders[Survey]] == 2 and pd.isna(Row[Survey + '-Survey Reminder'])):
+            Row[Survey + '-Survey Reminder Email'] = 2
             Row[Survey + '-Survey Reminder'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
-
-        ChangesEmailSend(Row['ID'], Row['Email'], Row['First Name'], Row['Last Name'], Row['Course Name'], Row['Course Number'], Row['Pre-Survey Close Date'], Row['Mid-Survey Close Date'], Row['Post-Survey Close Date'])
 
     return Row
 
-    def ChangesEmailSend(ID, InstructorEmail, InstructorFirst, InstructorLast, CourseName, Code, PreClose, MidClose, PostClose):
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = "Changes to Survey Dates"
-        msg['From'] = CPERLEmail
-        msg['To'] = CPERLEmail
-        # msg['To'] = InstructorEmail
-
-        if(pd.notnull(PreClose)):
-            PreClose = datetime.datetime.strptime(PreClose, "%d-%b-%Y")
-            PreClose = (PreClose + datetime.timedelta(hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
-        else:
-            PreClose = 'Not Available'
-
-        if(pd.notnull(MidClose)):
-            MidClose = datetime.datetime.strptime(MidClose, "%d-%b-%Y")
-            MidClose = (MidClose + datetime.timedelta(hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
-        else:
-            MidClose = 'Not Available'
-
-        PostClose = datetime.datetime.strptime(PostClose, "%d-%b-%Y")
-        PostClose = (PostClose + datetime.timedelta(hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
-
-    	# Create the body of the message (a plain-text and an HTML version).
-        text = """
-    		   Dear Dr. {First} {Last},\n\n
-
-    		   Thank you again for participating in the PLIC. Changes were recently made to the pre- and/or post-survey close dates
-               for your class, {Course} ({Code}). These surveys are currently set to close for students at the following times:\n\n
-
-               PRE -- {PreClose}\n
-               MID -- {MidClose}\n
-               POST -- {PostClose}\n\n
-
-               If you would like to change these dates again, please fill out the form again with your unique ID ({Identifier}):\n\n
-               {ChangeURL}\n\n
-
-
-    		   Thank you,\n
-    		   Cornell Physics Education Research Lab\n\n
-    		   This message was sent by an automated system.\n
-    		   """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code, PreClose = PreClose, MidClose = MidClose, PostClose = PostClose, Identifier = ID, ChangeURL = ChangeURL)
-
-        html = """\
-    	<html>
-    	  <head></head>
-    	  <body>
-    		<p>Dear Dr. {First} {Last},<br><br>
-
-    		   Thank you again for participating in the PLIC. Changes were recently made to the pre- and/or post-survey close dates
-               for your class, {Course} ({Code}). These surveys are currently set to close for students at the following times:<br><br>
-
-               PRE -- {PreClose}<br>
-               MID -- {MidClose}<br>
-               POST -- {PostClose}<br><br>
-
-               If you would like to change these dates again, please fill out the form again with your unique ID ({Identifier}):<br><br>
-               {ChangeURL}<br><br>
-
-
-    		   Thank you,<br>
-    		   Cornell Physics Education Research Lab<br><br>
-    		   This message was sent by an automated system.<br>
-    		</p>
-    	  </body>
-    	</html>
-       """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code, PreClose = PreClose, MidClose = MidClose, PostClose = PostClose, Identifier = ID, ChangeURL = ChangeURL)
-
-
-        # Record the MIME types of both parts - text/plain and text/html.
-        part1 = MIMEText(text, 'plain')
-        part2 = MIMEText(html, 'html')
-
-        # Attach parts into message container.
-        # According to RFC 2046, the last part of a multipart message, in this case
-        # the HTML message, is best and preferred.
-        msg.attach(part1)
-        msg.attach(part2)
-
-        server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
-        server.starttls()
-        server.login(UserEmail, EmailPassword)
-        server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
-        # server.sendmail(CPERLEmail, InstructorEmail, msg.as_string())
-        server.quit()
-
-        return 0
-
 def PrepareReport(Row, ErrorEmail = False):
-    Path = "C:/PLIC/" + Row['Season'] + str(Row['Course Year']) + "Files/" + Row['School'] + '_' + str(Row['Course Number']) + '_' + Row['Last Name'] + '_' + Row['ID']
+    Path = MainFolder + Row['Season'] + str(int(Row['Course Year'])) + "Files/" + Row['School'] + '_' + str(Row['Course Number']) + '_' + Row['Last Name'] + '_' + Row['ID']
     os.chdir(Path)
     PostSurveyName = DownloadResponses(Row['Post-Survey ID']) # Download the POST-survey data
-    Post_df = pd.read_csv(PostSurveyName + '.csv', skiprows = [1, 2])
+    print(Row['First Name'])
+    Post_df = SurveyToNewVersion(pd.read_csv(PostSurveyName + '.csv', skiprows = [1, 2]))
+
     if(len(Post_df) < 5): # If there are less than 5 post responses, do nothing
         return -1
     PostNames_df = GetNamesdf(Post_df, 'Post')
-    PDFName = Path + "/" + Row['Season'] + str(Row['Course Year']) + '_' + Row['School'] + '_' + str(Row['Course Number']) + '_' + Row['Last Name'] + '_Report'
+    PDFName = Path + "/" + Row['Season'] + str(int(Row['Course Year'])) + '_' + Row['School'] + '_' + str(Row['Course Number']) + '_' + Row['Last Name'] + '_Report'
     print(PDFName)
     if(Row['Number of Surveys'] >= 2): # If there are at least 2 surveys, download the PRE-survey data
         PreSurveyName = DownloadResponses(Row['Pre-Survey ID'])
-        Pre_df = pd.read_csv(PreSurveyName + '.csv', skiprows = [1, 2])
+        Pre_df = SurveyToNewVersion(pd.read_csv(PreSurveyName + '.csv', skiprows = [1, 2]))
         PreNames_df = GetNamesdf(Pre_df, 'Pre')
         if(Row['Number of Surveys'] == 3):
             MidSurveyName = DownloadResponses(Row['Mid-Survey ID'])
-            Mid_df = pd.read_csv(MidSurveyName + '.csv', skiprows = [1, 2])
+            Mid_df = SurveyToNewVersion(pd.read_csv(MidSurveyName + '.csv', skiprows = [1, 2]))
             MidNames_df = GetNamesdf(Mid_df, 'Mid')
             Names_df = PreNames_df.merge(MidNames_df, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Mid-Survey Last Names', 'Mid-Survey First Names'])
-            Names_df = Names_df.merge(PostNames_df, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Post-Survey Last Names', 'Post-Survey First Names'])
+            Names_df1 = Names_df.merge(PostNames_df, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Post-Survey Last Names', 'Post-Survey First Names'])
+            Names_df = PreNames_df.merge(MidNames_df, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Mid-Survey Last Names', 'Mid-Survey First Names'])
+            Names_df2 = Names_df.merge(PostNames_df, how = 'inner', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Post-Survey First Names', 'Post-Survey Last Names'])
+            Names_df = pd.concat([Names_df1, Names_df2], axis = 0)
             if((len(Pre_df.index) >= 5) and (len(Mid_df.index) >= 5) and (len(Post_df.index) >= 5)):
-                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], PRE = Pre_df, MID = Mid_df, POST = Post_df)
+                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], Row['ID'], MainFolder, PRE = Pre_df, MID = Mid_df, POST = Post_df)
             elif((len(Pre_df.index) >= 5) and (len(Post_df.index) >= 5)):
-                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], PRE = Pre_df, POST = Post_df)
+                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], Row['ID'], MainFolder, PRE = Pre_df, POST = Post_df)
             elif(len(Post_df.index) >= 5):
-                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], POST = Post_df)
+                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], Row['ID'], MainFolder, POST = Post_df)
             else:
                 ErrorEmail = True
 
         else:
-            Names_df = PreNames_df.merge(PostNames_df, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Post-Survey Last Names', 'Post-Survey First Names'])
+            Names_df1 = PreNames_df.merge(PostNames_df, how = 'outer', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Post-Survey Last Names', 'Post-Survey First Names'])
+            Names_df2 = PreNames_df.merge(PostNames_df, how = 'inner', left_on = ['Pre-Survey Last Names', 'Pre-Survey First Names'], right_on = ['Post-Survey First Names', 'Post-Survey Last Names'])
+            Names_df = pd.concat([Names_df1, Names_df2], axis = 0)
             if((len(Pre_df.index) >= 5) and (len(Post_df.index) >= 5)):
-                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], PRE = Pre_df, POST = Post_df)
+                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], Row['ID'], MainFolder, PRE = Pre_df, POST = Post_df)
             elif(len(Post_df.index) >= 5):
-                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], POST = Post_df)
+                ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], Row['ID'], MainFolder, POST = Post_df)
             else:
                 ErrorEmail = True
     else:
         Names_df = PostNames_df.copy()
-        ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], POST = Post_df)
+        ReportGen.Generate(PDFName, r'\textwidth', Row['Number Of Students'], Row['Course Type'], Row['ID'], MainFolder, POST = Post_df)
 
     if(Row['Credit Offered']):
         Names_df = Names_df.fillna('')
         Names_df['PostName'] = Names_df['Post-Survey Last Names'] + Names_df['Post-Survey First Names']
-        if('Pre-Survey Last Names' in Names_df.columns):
+        if('Mid-Survey Last Names' in Names_df.columns):
             Names_df['PreName'] = Names_df['Pre-Survey Last Names'] + Names_df['Pre-Survey First Names']
+            Names_df['MidName'] = Names_df['Mid-Survey Last Names'] + Names_df['Mid-Survey First Names']
+            Names_df = Names_df[((~Names_df.duplicated(subset = 'PreName', keep = 'last')) | (Names_df['PreName'].isnull()))
+                & ((~Names_df.duplicated(subset = 'MidName', keep = 'last')) | (Names_df['MidName'].isnull()))
+                & ((~Names_df.duplicated(subset = 'PostName', keep = 'last')) | (Names_df['PostName'].isnull()))]
+            Names_df = Names_df.drop_duplicates(subset = ['PreName', 'MidName', 'PostName'], keep = 'last')
+            Names_df = Names_df.sort_values(by = ['PostName', 'MidName', 'PreName'])
+            Names_df = Names_df.drop(labels = ['PreName', 'MidName', 'PostName'], axis = 1)
+        elif('Pre-Survey Last Names' in Names_df.columns):
+            Names_df['PreName'] = Names_df['Pre-Survey Last Names'] + Names_df['Pre-Survey First Names']
+            Names_df = Names_df[((~Names_df.duplicated(subset = 'PreName', keep = 'last')) | (Names_df['PreName'] == ''))
+                & ((~Names_df.duplicated(subset = 'PostName', keep = 'last')) | (Names_df['PostName'] == ''))]
             Names_df = Names_df.sort_values(by = ['PostName', 'PreName'])
-            NamesDF = Names_df.drop(labels = ['PreName', 'PostName'], axis = 1)
+            Names_df = Names_df.drop(labels = ['PreName', 'PostName'], axis = 1)
         else:
             Names_df = Names_df.sort_values(by = 'PostName')
             Names_df = Names_df.drop(labels = 'PostName', axis = 1)
@@ -346,177 +283,12 @@ def PrepareReport(Row, ErrorEmail = False):
 
     return 0
 
-    def SendReport(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Code, ReportFile, NamesFile = None): # Note that unlike other email send functions, this one takes values, not a series as arguments
-        msg = MIMEMultipart('alternative')
-        msg['From'] = CPERLEmail
-        msg['To'] = CPERLEmail
-        # msg['To'] = InstructorEmail
-        msg['Cc'] = CPERLEmail
-        msg['Subject'] = "PLIC Report"
+def SurveyToNewVersion(df, CurrentVersion = MainFolder + 'PLIC_May2019.csv'):
+    df = df.drop(labels = 'Status', axis = 1)
 
-    	# Create the body of the message (a plain-text and an HTML version).
-        text = """
-    		   Dear Dr. {First} {Last},\n\n
+    df.columns = pd.read_csv(CurrentVersion).columns
 
-    		   Thank you again for participating in the PLIC. Please find attached a copy of the report summarizing the PLIC
-    		   results for your course, {Course} ({Code}). Additionally, if you indicated to us that you are offering students credit
-               for completing the survey we have included a CSV file with their names here.\n\n
-
-               We have recently begun developing an online interactive dashboard where instructors can explore their data in more
-               depth. The dashboard is currently available at:\n\n
-
-               http://colewalsh295.shinyapps.io/PLIC-DataExplorer\n\n
-
-               You can also download de-identified data from this dashboard (if you would like identifiable data from your class
-               please reply to this email with a copy of Institutional Review Board approval from your institution).
-
-               We are continuing to test this new dashboard to better improve user experiences, so please let us know by replying
-               to this email if you have any questions, comments, or suggestions regarding this new dashboard and/or new report format.\n\n
-
-    		   Thank you,\n
-    		   Cornell Physics Education Research Lab\n\n
-    		   This message was sent by an automated system.\n
-    		   """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
-
-        html = """\
-    	<html>
-    	  <head></head>
-    	  <body>
-    		<p>Dear Dr. {First} {Last},<br><br>
-
-    		   Thank you again for participating in the PLIC. Please find attached a copy of the report summarizing the PLIC
-    		   results for your course, {Course} ({Code}). Additionally, if you indicated to us that you are offering students credit
-               for completing the survey we have included a CSV file with their names here.<br><br>
-
-               We have recently begun developing an online interactive dashboard where instructors can explore their data in more
-               depth. The dashboard is currently available at:<br><br>
-
-               http://colewalsh295.shinyapps.io/PLIC-DataExplorer<br><br>
-
-               You can also download de-identified data from this dashboard (if you would like identifiable data from your class
-               please reply to this email with a copy of Institutional Review Board approval from your institution).
-
-               We are continuing to test this new dashboard to better improve user experiences, so please let us know by replying
-               to this email if you have any questions, comments, or suggestions regarding this new dashboard and/or new report format.
-
-    		   Thank you,<br>
-    		   Cornell Physics Education Research Lab<br><br>
-    		   This message was sent by an automated system.
-    		</p>
-    	  </body>
-    	</html>
-    	""".format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
-
-
-        # Record the MIME types of both parts - text/plain and text/html.
-        part1 = MIMEText(text, 'plain')
-        part2 = MIMEText(html, 'html')
-
-        # Attach parts into message container.
-        # According to RFC 2046, the last part of a multipart message, in this case
-        # the HTML message, is best and preferred.
-        msg.attach(part1)
-        msg.attach(part2)
-
-        f_pdf = open(ReportFile, 'rb')
-        att_pdf = MIMEApplication(f_pdf.read(), _subtype = "pdf")
-        f_pdf.close()
-        att_pdf.add_header('Content-Disposition', 'attachment', filename = ReportFile)
-        msg.attach(att_pdf)
-
-        if(NamesFile is not None):
-            f_csv=open(NamesFile, 'rb')
-            att_csv = MIMEApplication(f_csv.read(), _subtype="csv")
-            f_csv.close()
-            att_csv.add_header('Content-Disposition', 'attachment', filename = NamesFile)
-            msg.attach(att_csv)
-
-        server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
-        server.starttls()
-        server.login(UserEmail, EmailPassword)
-        server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
-        # server.sendmail(CPERLEmail, [InstructorEmail, CPERLEmail], msg.as_string())
-        server.quit()
-
-        return 0
-
-    def SendErrorEmail(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Code, NamesFile = None): # Note that unlike other email send functions, this one takes values, not a series as arguments
-        msg = MIMEMultipart('alternative')
-        msg['From'] = CPERLEmail
-        msg['To'] = CPERLEmail
-        # msg['To'] = InstructorEmail
-        msg['Cc'] = CPERLEmail
-        msg['Subject'] = "PLIC Report"
-
-        # Create the body of the message (a plain-text and an HTML version).
-        text = """
-               Dear Dr. {First} {Last},\n\n
-
-               Thank you again for participating in the PLIC. Unfortunately, fewer than 5 students took each survey so we are unable to
-               provide a summary of your students' performance as the data may be identifiable. If you indicated to us that you are
-               offering students credit for completing the survey we have included a CSV file with their names here. Additionally,
-               if you would like to receive a report of your students' performance and/or identifiable data from your class please
-               reply to this email with a copy of Institutional Review Board approval from your institution.\n\n
-
-               We are continuing to test and improve our new report generation system, so please let us know by replying to this
-               email if you have any questions, comments, or suggestions regarding this new report format.\n\n
-
-               Thank you,\n
-               Cornell Physics Education Research Lab\n\n
-               This message was sent by an automated system.\n
-               """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
-
-        html = """\
-        <html>
-          <head></head>
-          <body>
-            <p>Dear Dr. {First} {Last},<br><br>
-               Thank you again for participating in the PLIC. Unfortunately, fewer than 5 students took each survey so we are unable to
-               provide a summary of your students' performance as the data may be identifiable. If you indicated to us that you are
-               offering students credit for completing the survey we have included a CSV file with their names here. Additionally,
-               if you would like to receive a report of your students' performance and/or identifiable data from your class please
-               reply to this email with a copy of Institutional Review Board approval from your institution.<br><br>
-
-               Thank you,<br>
-               Cornell Physics Education Research Lab<br><br>
-               This message was sent by an automated system.
-            </p>
-          </body>
-        </html>
-        """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
-
-
-        # Record the MIME types of both parts - text/plain and text/html.
-        part1 = MIMEText(text, 'plain')
-        part2 = MIMEText(html, 'html')
-
-        # Attach parts into message container.
-        # According to RFC 2046, the last part of a multipart message, in this case
-        # the HTML message, is best and preferred.
-        msg.attach(part1)
-        msg.attach(part2)
-
-        f_pdf = open(ReportFile, 'rb')
-        att_pdf = MIMEApplication(f_pdf.read(), _subtype = "pdf")
-        f_pdf.close()
-        att_pdf.add_header('Content-Disposition', 'attachment', filename = ReportFile)
-        msg.attach(att_pdf)
-
-        if(NamesFile is not None):
-            f_csv=open(NamesFile, 'rb')
-            att_csv = MIMEApplication(f_csv.read(), _subtype="csv")
-            f_csv.close()
-            att_csv.add_header('Content-Disposition', 'attachment', filename = NamesFile)
-            msg.attach(att_csv)
-
-        server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
-        server.starttls()
-        server.login(UserEmail, EmailPassword)
-        server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
-        # server.sendmail(CPERLEmail, [InstructorEmail, CPERLEmail], msg.as_string())
-        server.quit()
-
-        return 0
+    return df
 
 def DownloadResponses(SurveyID):
     # Setting user Parameters
@@ -563,9 +335,15 @@ def DownloadResponses(SurveyID):
 
 def GetNumberStudents(Row, Survey):
     # Move to the specific course directory to download responses
-    path = "C:/PLIC/" + Row['Season'] + str(Row['Course Year']) + "Files/" + Row['School'] + '_' + str(Row['Course Number']) + '_' + Row['Last Name'] + '_' + Row['ID']
+    TermDir = MainFolder + Row['Season'] + str(int(Row['Course Year'])) + "Files"
+    if not os.path.exists(TermDir):
+        os.mkdir(TermDir, 755)
+    CourseDir = Row['School'] + '_' + str(Row['Course Number']) + '_' + Row['Last Name'] + '_' + Row['ID']
+    CourseDir = TermDir + "//" + CourseDir
+    if not os.path.exists(CourseDir):
+        os.mkdir(CourseDir, 755)
 
-    os.chdir(path)
+    os.chdir(CourseDir)
     DownloadResponses(Row[Survey + '-Survey ID'])
     Survey_Name = GetSurveyName(Row[Survey + '-Survey ID'])
     StudentDF = pd.read_csv(Survey_Name + '.csv', skiprows = [1, 2])
@@ -861,7 +639,7 @@ def SendSurvey(Row, MidPost):
     msg['Subject'] = "PLIC {}-Survey link".format(MidPost)
 
     SurveyURL = "https://{0}.qualtrics.com/jfe/form/".format(DataCenter) + Row[MidPost + '-Survey ID']
-    SurveyCloseDate = (Row['Close Date'] + datetime.timedelta(hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
+    SurveyCloseDate = (pd.to_datetime(Row[MidPost  + '-Survey Close Date']) + datetime.timedelta(hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
 
     # Create the body of the message (a plain-text and an HTML version).
     text = """
@@ -939,6 +717,89 @@ def SendSurvey(Row, MidPost):
 
     return 0
 
+def ReminderEmailSend(Row, Survey):
+    msg = MIMEMultipart('alternative')
+    msg['From'] = CPERLEmail
+    msg['To'] = CPERLEmail
+    # msg['To'] = InstructorEmail
+    msg['Subject'] = "Reminder for the PLIC survey"
+    SurveyURL = "https://{0}.qualtrics.com/jfe/form/".format(DataCenter) + Row[Survey + '-Survey ID']
+    SurveyCloseDate = (Row['Close Date'] + datetime.timedelta(hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
+
+    # Create the body of the message (a plain-text and an HTML version).
+    text = """
+		   Dear Dr. {First} {Last},\n \n
+
+           This is a reminder from the CPERL team about the PLIC {Survey}-survey for
+           {Course} ({Code}) which will close on {Close} EST.\n \n
+           So far there have been {Responses} responses to the survey.\n \n
+           Here is another link to the survey: \n
+		   {Link} \n \n
+
+           If you would like to change the date that the survey
+           will stop accepting responses from students, please complete the form here
+           with your unique ID({Identifier}):\n\n
+
+           {ChangeURL}\n\n
+
+           Let us know by replying to this email if you have any questions about
+           this process. \n \n
+
+		   Thank you, \n
+		   Cornell Physics Education Research Lab \n \n
+		   This message was sent by an automated system. \n
+		   """.format(First = Row['First Name'], Last = Row['Last Name'], Survey = Survey, Course = Row['Course Name'].replace("_", " "), Code = Row['Course Number'], Identifier = Row['ID'], Responses = Row['N_Students'], Close = SurveyCloseDate, Link = SurveyURL, ChangeURL = ChangeURL)
+
+    html = """\
+    <html>
+	  <head></head>
+	  <body>
+        <p>Dear Dr. {First} {Last}, <br><br>
+
+            This is a reminder from the CPERL team about the PLIC {Survey}-survey
+            for {Course} ({Code}) which will close on {Close} EST.<br><br>
+            So far there have been {Responses} responses to the survey. <br><br>
+            Here is another link to the survey: <br>
+			{Link} <br>
+
+            If you would like to change the date that the survey
+            will stop accepting responses from students, please complete the form here
+            with your unique ID({Identifier}):<br><br>
+
+            {ChangeURL}<br><br>
+
+
+            Let us know by replying to this email if you have any questions about
+            this process. <br><br>
+
+		   Thank you, <br>
+		   Cornell Physics Education Research Lab <br><br>
+		   This message was sent by an automated system.
+		</p>
+	  </body>
+    </html>
+    """.format(First = Row['First Name'], Last = Row['Last Name'], Survey = Survey, Course = Row['Course Name'].replace("_", " "), Code = Row['Course Number'], Identifier = Row['ID'], Responses = Row['N_Students'], Close = SurveyCloseDate, Link = SurveyURL, ChangeURL = ChangeURL)
+
+    # Record the MIME types of both parts - text/plain and text/html.
+    part1 = MIMEText(text, 'plain')
+    part2 = MIMEText(html, 'html')
+
+    # Attach parts into message container.
+    # According to RFC 2046, the last part of a multipart message, in this case
+    # the HTML message, is best and preferred.
+    msg.attach(part1)
+    msg.attach(part2)
+
+    # The actual mail send
+    server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
+    server.starttls()
+    server.login(UserEmail,EmailPassword)
+    server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+    # server.sendmail(CPERLEmail, InstructorEmail, msg.as_string())
+    server.quit()
+
+    return 0
+
 def ZeroResponseEmail(Row, Survey):
     msg = MIMEMultipart('alternative')
     msg['From'] = CPERLEmail
@@ -947,7 +808,7 @@ def ZeroResponseEmail(Row, Survey):
     msg['Subject'] = "There have been zero responses to the PLIC"
 
     SurveyURL = SurveyURL = "https://{0}.qualtrics.com/jfe/form/".format(DataCenter) + Row[Survey + '-Survey ID']
-    SurveyCloseDate = (Row['Close Date'] + datetime.timedelta(hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
+    SurveyCloseDate = (Row['Close Date'] + datetime.timedelta(days = 3, hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
 
     # Create the body of the message (a plain-text and an HTML version).
     text = """
@@ -972,7 +833,7 @@ def ZeroResponseEmail(Row, Survey):
            Thank you,\n
            Cornell Physics Education Research Lab\n
            This message was sent by an automated system.\n
-           """.format(First = Rpw['First Name'], Last = Row['Last Name'], Survey = Survey, Course = Row['Course Name'].replace("_", " "), Code = Row['Course Number'], Close = SurveyCloseDate, Link = SurveyURL,
+           """.format(First = Row['First Name'], Last = Row['Last Name'], Survey = Survey, Course = Row['Course Name'].replace("_", " "), Code = Row['Course Number'], Close = SurveyCloseDate, Link = SurveyURL,
            Identifier = Row['ID'], ChangeURL = ChangeURL)
 
     html = """\
@@ -1003,7 +864,7 @@ def ZeroResponseEmail(Row, Survey):
         </p>
       </body>
     </html>
-    """.format(First = Rpw['First Name'], Last = Row['Last Name'], Survey = Survey, Course = Row['Course Name'].replace("_", " "), Code = Row['Course Number'], Close = SurveyCloseDate, Link = SurveyURL,
+    """.format(First = Row['First Name'], Last = Row['Last Name'], Survey = Survey, Course = Row['Course Name'].replace("_", " "), Code = Row['Course Number'], Close = SurveyCloseDate, Link = SurveyURL,
     Identifier = Row['ID'], ChangeURL = ChangeURL)
 
     # Record the MIME types of both parts - text/plain and text/html.
@@ -1027,6 +888,95 @@ def ZeroResponseEmail(Row, Survey):
     # server.sendmail(CPERLEmail, Row['Email'], msg.as_string())
     server.quit()
 
+    return 0
+
+def ChangesEmailSend(Row): # This function is called on a particular row so it looks different that the other email functions
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = "Changes to Survey Dates"
+    msg['From'] = CPERLEmail
+    msg['To'] = CPERLEmail
+    # msg['To'] = InstructorEmail
+
+    if(pd.notnull(Row['Pre-Survey Close Date'])):
+        PreClose = datetime.datetime.strptime(Row['Pre-Survey Close Date'], "%d-%b-%Y")
+        PreClose = (PreClose + datetime.timedelta(hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
+    else:
+        PreClose = 'Not Available'
+
+    if(pd.notnull(Row['Mid-Survey Close Date'])):
+        MidClose = datetime.datetime.strptime(Row['Mid-Survey Close Date'], "%d-%b-%Y")
+        MidClose = (MidClose + datetime.timedelta(hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
+    else:
+        MidClose = 'Not Available'
+
+    PostClose = datetime.datetime.strptime(Row['Post-Survey Close Date'], "%d-%b-%Y")
+    PostClose = (PostClose + datetime.timedelta(hours = 23, minutes = 59, seconds = 59)).strftime("%d-%b-%Y %H:%M:%S")
+
+	# Create the body of the message (a plain-text and an HTML version).
+    text = """
+		   Dear Dr. {First} {Last},\n\n
+
+		   Thank you again for participating in the PLIC. Changes were recently made to the pre- and/or post-survey close dates
+           for your class, {Course} ({Code}). These surveys are currently set to close for students at the following times:\n\n
+
+           PRE -- {PreClose} EST\n
+           MID -- {MidClose} EST\n
+           POST -- {PostClose} EST\n\n
+
+           If you would like to change these dates again, please fill out the form again with your unique ID ({Identifier}):\n\n
+           {ChangeURL}\n\n
+
+
+		   Thank you,\n
+		   Cornell Physics Education Research Lab\n\n
+		   This message was sent by an automated system.\n
+		   """.format(First = Row['First Name'], Last = Row['Last Name'], Course = Row['Course Name'].replace("_", " "), Code = Row['Course Number'], PreClose = PreClose, MidClose = MidClose, PostClose = PostClose, Identifier = Row['ID'], ChangeURL = ChangeURL)
+
+    html = """\
+	<html>
+	  <head></head>
+	  <body>
+		<p>Dear Dr. {First} {Last},<br><br>
+
+		   Thank you again for participating in the PLIC. Changes were recently made to the pre- and/or post-survey close dates
+           for your class, {Course} ({Code}). These surveys are currently set to close for students at the following times:<br><br>
+
+           PRE -- {PreClose} EST<br>
+           MID -- {MidClose} EST<br>
+           POST -- {PostClose} EST<br><br>
+
+           If you would like to change these dates again, please fill out the form again with your unique ID ({Identifier}):<br><br>
+           {ChangeURL}<br><br>
+
+
+		   Thank you,<br>
+		   Cornell Physics Education Research Lab<br><br>
+		   This message was sent by an automated system.<br>
+		</p>
+	  </body>
+	</html>
+   """.format(First = Row['First Name'], Last = Row['Last Name'], Course = Row['Course Name'].replace("_", " "), Code = Row['Course Number'], PreClose = PreClose, MidClose = MidClose, PostClose = PostClose, Identifier = Row['ID'], ChangeURL = ChangeURL)
+
+
+    # Record the MIME types of both parts - text/plain and text/html.
+    part1 = MIMEText(text, 'plain')
+    part2 = MIMEText(html, 'html')
+
+    # Attach parts into message container.
+    # According to RFC 2046, the last part of a multipart message, in this case
+    # the HTML message, is best and preferred.
+    msg.attach(part1)
+    msg.attach(part2)
+
+    server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
+    server.starttls()
+    server.login(UserEmail, EmailPassword)
+    server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+    # server.sendmail(CPERLEmail, InstructorEmail, msg.as_string())
+    server.quit()
+
+    return 0
+
 def SendSurveyClose(Row, PreMid):
     msg = MIMEMultipart('alternative')
     msg['From'] = CPERLEmail
@@ -1039,7 +989,7 @@ def SendSurveyClose(Row, PreMid):
     else:
         MidPost = 'Post'
 
-    PostSurveyOpen = (datetime.datetime.strptime(Row[MidPost + '-Survey Close Date'], '%d-%m-%Y') - datetime.timedelta(days = 14)).strftime("%d-%b-%Y %H:%M:%S")
+    PostSurveyOpen = (datetime.datetime.strptime(Row[MidPost + '-Survey Close Date'], '%d-%b-%Y') - datetime.timedelta(days = 14)).strftime("%d-%b-%Y %H:%M:%S")
 
     text = """
             Dear Dr. {First} {Last},\n\n
@@ -1116,6 +1066,175 @@ def SendSurveyClose(Row, PreMid):
     server.login(UserEmail,EmailPassword)
     server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
     # server.sendmail(CPERLEmail, Row['Email'], msg.as_string())
+    server.quit()
+
+    return 0
+
+def SendReport(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Code, ReportFile, NamesFile = None): # Note that unlike other email send functions, this one takes values, not a series as arguments (again, it is called within another function)
+    msg = MIMEMultipart('alternative')
+    msg['From'] = CPERLEmail
+    msg['To'] = CPERLEmail
+    # msg['To'] = InstructorEmail
+    msg['Cc'] = CPERLEmail
+    msg['Subject'] = "PLIC Report"
+
+    # Create the body of the message (a plain-text and an HTML version).
+    text = """
+           Dear Dr. {First} {Last},\n\n
+
+           Thank you again for participating in the PLIC. Please find attached a copy of the report summarizing the PLIC
+           results for your course, {Course} ({Code}). Additionally, if you indicated to us that you are offering students credit
+           for completing the survey we have included a CSV file with their names here.\n\n
+
+           We have recently begun developing an online interactive dashboard where instructors can explore their data in more
+           depth. The dashboard is currently available at:\n\n
+
+           http://colewalsh295.shinyapps.io/PLIC-DataExplorer\n\n
+
+           You can also download de-identified data from this dashboard (if you would like identifiable data from your class
+           please reply to this email with a copy of Institutional Review Board approval from your institution).
+
+           We are continuing to test this new dashboard to better improve user experiences, so please let us know by replying
+           to this email if you have any questions, comments, or suggestions regarding this new dashboard and/or new report format.\n\n
+
+           Thank you,\n
+           Cornell Physics Education Research Lab\n\n
+           This message was sent by an automated system.\n
+           """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
+
+    html = """\
+    <html>
+      <head></head>
+      <body>
+        <p>Dear Dr. {First} {Last},<br><br>
+
+           Thank you again for participating in the PLIC. Please find attached a copy of the report summarizing the PLIC
+           results for your course, {Course} ({Code}). Additionally, if you indicated to us that you are offering students credit
+           for completing the survey we have included a CSV file with their names here.<br><br>
+
+           We have recently begun developing an online interactive dashboard where instructors can explore their data in more
+           depth. The dashboard is currently available at:<br><br>
+
+           http://colewalsh295.shinyapps.io/PLIC-DataExplorer<br><br>
+
+           You can also download de-identified data from this dashboard (if you would like identifiable data from your class
+           please reply to this email with a copy of Institutional Review Board approval from your institution).
+
+           We are continuing to test this new dashboard to better improve user experiences, so please let us know by replying
+           to this email if you have any questions, comments, or suggestions regarding this new dashboard and/or new report format.
+
+           Thank you,<br>
+           Cornell Physics Education Research Lab<br><br>
+           This message was sent by an automated system.
+        </p>
+      </body>
+    </html>
+    """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
+
+
+    # Record the MIME types of both parts - text/plain and text/html.
+    part1 = MIMEText(text, 'plain')
+    part2 = MIMEText(html, 'html')
+
+    # Attach parts into message container.
+    # According to RFC 2046, the last part of a multipart message, in this case
+    # the HTML message, is best and preferred.
+    msg.attach(part1)
+    msg.attach(part2)
+
+    f_pdf = open(ReportFile, 'rb')
+    att_pdf = MIMEApplication(f_pdf.read(), _subtype = "pdf")
+    f_pdf.close()
+    att_pdf.add_header('Content-Disposition', 'attachment', filename = ReportFile)
+    msg.attach(att_pdf)
+
+    if(NamesFile is not None):
+        f_csv=open(NamesFile, 'rb')
+        att_csv = MIMEApplication(f_csv.read(), _subtype="csv")
+        f_csv.close()
+        att_csv.add_header('Content-Disposition', 'attachment', filename = NamesFile)
+        msg.attach(att_csv)
+
+    server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
+    server.starttls()
+    server.login(UserEmail, EmailPassword)
+    server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+    # server.sendmail(CPERLEmail, [InstructorEmail, CPERLEmail], msg.as_string())
+    server.quit()
+
+    return 0
+
+def SendErrorEmail(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Code, NamesFile = None): # Note that unlike other email send functions, this one takes values, not a series as arguments
+    msg = MIMEMultipart('alternative')
+    msg['From'] = CPERLEmail
+    msg['To'] = CPERLEmail
+    # msg['To'] = InstructorEmail
+    msg['Cc'] = CPERLEmail
+    msg['Subject'] = "PLIC Report"
+
+    # Create the body of the message (a plain-text and an HTML version).
+    text = """
+           Dear Dr. {First} {Last},\n\n
+
+           Thank you again for participating in the PLIC. Unfortunately, fewer than 5 students took each survey so we are unable to
+           provide a summary of your students' performance as the data may be identifiable. If you indicated to us that you are
+           offering students credit for completing the survey we have included a CSV file with their names here. Additionally,
+           if you would like to receive a report of your students' performance and/or identifiable data from your class please
+           reply to this email with a copy of Institutional Review Board approval from your institution.\n\n
+
+           Thank you,\n
+           Cornell Physics Education Research Lab\n\n
+           This message was sent by an automated system.\n
+           """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
+
+    html = """\
+    <html>
+      <head></head>
+      <body>
+        <p>Dear Dr. {First} {Last},<br><br>
+           Thank you again for participating in the PLIC. Unfortunately, fewer than 5 students took each survey so we are unable to
+           provide a summary of your students' performance as the data may be identifiable. If you indicated to us that you are
+           offering students credit for completing the survey we have included a CSV file with their names here. Additionally,
+           if you would like to receive a report of your students' performance and/or identifiable data from your class please
+           reply to this email with a copy of Institutional Review Board approval from your institution.<br><br>
+
+           Thank you,<br>
+           Cornell Physics Education Research Lab<br><br>
+           This message was sent by an automated system.
+        </p>
+      </body>
+    </html>
+    """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
+
+
+    # Record the MIME types of both parts - text/plain and text/html.
+    part1 = MIMEText(text, 'plain')
+    part2 = MIMEText(html, 'html')
+
+    # Attach parts into message container.
+    # According to RFC 2046, the last part of a multipart message, in this case
+    # the HTML message, is best and preferred.
+    msg.attach(part1)
+    msg.attach(part2)
+
+    f_pdf = open(ReportFile, 'rb')
+    att_pdf = MIMEApplication(f_pdf.read(), _subtype = "pdf")
+    f_pdf.close()
+    att_pdf.add_header('Content-Disposition', 'attachment', filename = ReportFile)
+    msg.attach(att_pdf)
+
+    if(NamesFile is not None):
+        f_csv=open(NamesFile, 'rb')
+        att_csv = MIMEApplication(f_csv.read(), _subtype="csv")
+        f_csv.close()
+        att_csv.add_header('Content-Disposition', 'attachment', filename = NamesFile)
+        msg.attach(att_csv)
+
+    server = smtplib.SMTP(host = 'smtp.office365.com', port = 587)
+    server.starttls()
+    server.login(UserEmail, EmailPassword)
+    server.sendmail(CPERLEmail, CPERLEmail, msg.as_string())
+    # server.sendmail(CPERLEmail, [InstructorEmail, CPERLEmail], msg.as_string())
     server.quit()
 
     return 0
