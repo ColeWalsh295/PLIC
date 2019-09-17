@@ -61,21 +61,23 @@ df.Course <- df.CR %>%
     TRUE ~ NA_character_
   )), ref = 'FY'))
 
-df.Course$GenW <- df.Course$Gender == 'Women'
-df.Course$MajorEng <- df.Course$Major == 'Engineering'
-df.Course$MajorPhys <- df.Course$Major == 'Physics'
+df.Centered <- Create.Class.Variables(df.Course %>% mutate(PreScores = TotalScores))
+
+df.Centered$GenW <- df.Centered$Gender == 'Women'
+df.Centered$MajorEng <- df.Centered$Major == 'Engineering'
+df.Centered$MajorPhys <- df.Centered$Major == 'Physics'
 ```
 
 **Demographic Breakdown**
 ```{r}
-table(df.Course$Major)
-table(df.Course$Lab_Level, exclude = NULL)
-table(df.Course$Gender, exclude = NULL)
-table(df.Course$Gender, df.Course$Major)
-table(df.Course$Gender, df.Course$Lab_Level)
-table(df.Course$URM_Status)
-table(df.Course$URM_Status, df.Course$Major)
-table(df.Course$URM_Status, df.Course$Lab_Level)
+table(df.Centered$Major)
+table(df.Centered$Lab_Level, exclude = NULL)
+table(df.Centered$Gender, exclude = NULL)
+table(df.Centered$Gender, df.Centered$Major)
+table(df.Centered$Gender, df.Centered$Lab_Level)
+table(df.Centered$URM_Status)
+table(df.Centered$URM_Status, df.Centered$Major)
+table(df.Centered$URM_Status, df.Centered$Lab_Level)
 ```
 
 **Descriptive Stats**
@@ -86,40 +88,40 @@ Desc.stats <- function(df, var){
     summarize(n(), mean(TotalScores), sd(TotalScores)/sqrt(n()))
 }
 
-Desc.stats(df.Course, 'Gender')
-Desc.stats(df.Course, 'URM_Status')
-Desc.stats(df.Course, 'Major')
-Desc.stats(df.Course, 'Class_Standing')
+Desc.stats(df.Centered, 'Gender')
+Desc.stats(df.Centered, 'URM_Status')
+Desc.stats(df.Centered, 'Major')
+Desc.stats(df.Centered, 'Class_Standing')
 ```
 
 **Pairwise comparisons**
 ```{r}
-t.test(TotalScores ~ Gender, df.Course)
-cohen.d(TotalScores ~ Gender, df.Course)
+t.test(TotalScores ~ Gender, df.Centered)
+cohen.d(TotalScores ~ Gender, df.Centered)
 
-t.test(TotalScores ~ URM_Status, df.Course)
-cohen.d(TotalScores ~ URM_Status, df.Course)
+t.test(TotalScores ~ URM_Status, df.Centered)
+cohen.d(TotalScores ~ URM_Status, df.Centered)
 ```
 
 **LMER**
 ```{r}
-mod_null <- lmer(TotalScores ~ (1 | Class_ID), df.Course)
+mod_null <- lmer(Pre ~ (1 | Class_ID), df.Centered)
 summary(mod_null)
 r.squaredGLMM(mod_null)
 
-mod_student <- lmer(TotalScores ~ Gender + Major + URM_Status + (1 | Class_ID), df.Course)
+mod_student <- lmer(TotalScores ~ Gender + Major + URM_Status + (1 | Class_ID), df.Centered)
 summary(mod_student)
 r.squaredGLMM(mod_student)
 
-mod_course <- lmer(TotalScores ~ Gender + Major + URM_Status + Lab_Level + (1 | Class_ID), df.Course)
+mod_course <- lmer(TotalScores ~ Gender + Major + URM_Status + Lab_Level + (1 | Class_ID), df.Centered)
 summary(mod_course)
 r.squaredGLMM(mod_course)
 
-mod_interaction <- lmer(TotalScores ~ Gender*URM_Status + Major + Lab_Level + (1 | Class_ID), df.Course)
+mod_interaction <- lmer(TotalScores ~ Gender*URM_Status + Major + Lab_Level + (1 | Class_ID), df.Centered)
 summary(mod_interaction)
 r.squaredGLMM(mod_interaction)
 
-mod_interactionMajor <- lmer(TotalScores ~ (Gender + URM_Status)*Major + Lab_Level + (1 | Class_ID), df.Course)
+mod_interactionMajor <- lmer(TotalScores ~ (Gender + URM_Status)*Major + Lab_Level + (1 | Class_ID), df.Centered)
 summary(mod_interactionMajor)
 r.squaredGLMM(mod_interactionMajor)
 
