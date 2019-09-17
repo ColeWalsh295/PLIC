@@ -2,13 +2,131 @@
 library(tidyverse)
 library(data.table)
 source('C:/Users/Cole/Documents/GitHub/PLIC-Tools/Process-Merge-Concat/PLIC_DataProcessing.R')
+library(effsize)
+library(lme4)
+library(lmerTest)
+library(MuMIn)
+library(stargazer)
 ```
 
 **Import pre-survey data**
 ```{r}
-# Overall class/school breakdown
-PLIC.Complete.df <- fread('Pre_Valid_Concat_Scored.csv') %>%
+df <- fread('Pre_Valid_Concat_Scored.csv') %>%
+  Clean.PLIC(., Matched = FALSE, Collapse.vars = FALSE) %>%
+  Merge.CIS(., Matched = FALSE)
+
+# Gender non-binaries?
+table(df$Gender, exclude = NULL)
+
+df <- fread('Pre_Valid_Concat_Scored.csv') %>%
   Clean.PLIC(., Matched = FALSE) %>%
-  Merge.CIS(.)
+  Merge.CIS(., Matched = FALSE)
 ```
 
+**Get School/Class/Student statistics**
+```{r}
+df %>%
+  summarize(N.Students = nrow(.), N.Classes = length(unique(.[, 'Class_ID'])), N.Schools = length(unique(.[, 'School'])))
+# unique(df[, 'School']) # Check for duplicate schools
+
+table(df[!duplicated(df$School),]$Institution_Type, exclude = NULL)
+table(df[!duplicated(df$Class_ID),]$Lab_Level, exclude = NULL)
+
+# Only complete demographics
+df.Student <- df %>%
+  filter(!is.na(Gender) & !is.na(Ethnicity) & !is.na(Major) & !is.na(Class_Standing))
+df.Student %>%
+  summarize(N.Students = nrow(.), N.Classes = length(unique(.[, 'Class_ID'])), N.Schools = length(unique(.[, 'School'])))
+
+table(df.Student[!duplicated(df.Student$School),]$Institution_Type, exclude = NULL)
+table(df.Student[!duplicated(df.Student$Class_ID),]$Lab_Level, exclude = NULL)
+
+# CR demographics
+df.CR <- df.Student %>%
+  filter(Survey == 'C')
+
+df.CR %>%
+  summarize(N.Students = nrow(.), N.Classes = length(unique(.[, 'Class_ID'])), N.Schools = length(unique(.[, 'School'])))
+
+table(df.CR[!duplicated(df.CR$School),]$Institution_Type, exclude = NULL)
+table(df.CR[!duplicated(df.CR$Class_ID),]$Lab_Level, exclude = NULL)
+```
+
+**Mutate class/student variables**
+```{r}
+df.Course <- df.CR %>%
+  mutate(Lab_Level = relevel(as.factor(case_when(
+    (Lab_Level == 'Intro-Algebra') | (Lab_Level == 'Intro-Calculus') ~ 'FY',
+    (Lab_Level == 'Sophomore') | (Lab_Level == 'Junior') | (Lab_Level == 'Senior') ~ 'BFY',
+    TRUE ~ NA_character_
+  )), ref = 'FY'))
+
+df.Course$GenW <- df.Course$Gender == 'Women'
+df.Course$MajorEng <- df.Course$Major == 'Engineering'
+df.Course$MajorPhys <- df.Course$Major == 'Physics'
+```
+
+**Demographic Breakdown**
+```{r}
+table(df.Course$Major)
+table(df.Course$Lab_Level, exclude = NULL)
+table(df.Course$Gender, exclude = NULL)
+table(df.Course$Gender, df.Course$Major)
+table(df.Course$Gender, df.Course$Lab_Level)
+table(df.Course$URM_Status)
+table(df.Course$URM_Status, df.Course$Major)
+table(df.Course$URM_Status, df.Course$Lab_Level)
+```
+
+**Descriptive Stats**
+```{r}
+Desc.stats <- function(df, var){
+  df %>%
+    group_by_(var) %>%
+    summarize(n(), mean(TotalScores), sd(TotalScores)/sqrt(n()))
+}
+
+Desc.stats(df.Course, 'Gender')
+Desc.stats(df.Course, 'URM_Status')
+Desc.stats(df.Course, 'Major')
+Desc.stats(df.Course, 'Class_Standing')
+```
+
+**Pairwise comparisons**
+```{r}
+t.test(TotalScores ~ Gender, df.Course)
+cohen.d(TotalScores ~ Gender, df.Course)
+
+t.test(TotalScores ~ URM_Status, df.Course)
+cohen.d(TotalScores ~ URM_Status, df.Course)
+```
+
+**LMER**
+```{r}
+mod_null <- lmer(TotalScores ~ (1 | Class_ID), df.Course)
+summary(mod_null)
+r.squaredGLMM(mod_null)
+
+mod_student <- lmer(TotalScores ~ Gender + Major + URM_Status + (1 | Class_ID), df.Course)
+summary(mod_student)
+r.squaredGLMM(mod_student)
+
+mod_course <- lmer(TotalScores ~ Gender + Major + URM_Status + Lab_Level + (1 | Class_ID), df.Course)
+summary(mod_course)
+r.squaredGLMM(mod_course)
+
+mod_interaction <- lmer(TotalScores ~ Gender*URM_Status + Major + Lab_Level + (1 | Class_ID), df.Course)
+summary(mod_interaction)
+r.squaredGLMM(mod_interaction)
+
+mod_interactionMajor <- lmer(TotalScores ~ (Gender + URM_Status)*Major + Lab_Level + (1 | Class_ID), df.Course)
+summary(mod_interactionMajor)
+r.squaredGLMM(mod_interactionMajor)
+
+class(mod_null) <- "lmerMod"
+class(mod_student) <- "lmerMod"
+class(mod_course) <- "lmerMod"
+class(mod_interaction) <- "lmerMod"
+class(mod_interactionMajor) <- "lmerMod"
+stargazer(mod_null, mod_student, mod_course, mod_interaction, mod_interactionMajor, star.cutoffs = c(0.05, 0.01, 0.001), intercept.bottom = FALSE, out = 'Pre.html', intercept.top = TRUE, omit.stat = 'all')
+```
