@@ -7,6 +7,8 @@ library(lme4)
 library(lmerTest)
 library(MuMIn)
 library(stargazer)
+library(lavaan)
+library(semPlot)
 ```
 
 **Import pre-survey data**
@@ -131,4 +133,27 @@ class(mod_course) <- "lmerMod"
 class(mod_interaction) <- "lmerMod"
 class(mod_interactionMajor) <- "lmerMod"
 stargazer(mod_null, mod_student, mod_course, mod_interaction, mod_interactionMajor, star.cutoffs = c(0.05, 0.01, 0.001), intercept.bottom = FALSE, out = 'Pre.html', intercept.top = TRUE, omit.stat = 'all')
+```
+
+**SEM Analysis**
+```{r}
+model <- '
+  level: 1
+  # measurement model
+    Conf =~ Q7a_10 + Q7a_11 + Q7a_12 + Q7a_13
+    Att =~ Q7b_1 + Q7b_2 + Q7b_4
+    Eff =~ Q7c_1 + Q7c_2 + Q7b_3
+  # regressions
+    Conf ~ GenW + URM_Status
+    Att ~ GenW + URM_Status
+    Eff ~ GenW + URM_Status
+    TotalScores ~ GenW + URM_Status + MajorEng + MajorPhys + Conf + Att + Eff
+  level: 2
+    TotalScores ~ Lab_Level
+'
+
+#fit <- sem(model, data = PLIC.PreOnly)
+fit <- sem(model, data = df.Centered, cluster = 'Class_ID')
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+semPaths(fit, whatLabels = 'stand')
 ```
