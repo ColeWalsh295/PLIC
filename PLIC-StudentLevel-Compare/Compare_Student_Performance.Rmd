@@ -107,7 +107,7 @@ cohen.d(TotalScores ~ URM_Status, df.Centered)
 
 **LMER**
 ```{r}
-mod_null <- lmer(Pre ~ (1 | Class_ID), df.Centered)
+mod_null <- lmer(TotalScores ~ (1 | Class_ID), df.Centered)
 summary(mod_null)
 r.squaredGLMM(mod_null)
 
@@ -140,8 +140,8 @@ stargazer(mod_null, mod_student, mod_course, mod_interaction, mod_interactionMaj
 model <- '
   level: 1
   # measurement model
-    Conf =~ Q7a_10 + Q7a_11 + Q7a_12 + Q7a_13
-    Att =~ Q7b_1 + Q7b_2 + Q7b_4
+    Conf =~ Q7a_10 + Q7a_11  + Q7a_13
+    Att =~ Q7b_1 + Q7b_2 + Q7b_3 + Q7b_4
     Eff =~ Q7c_1 + Q7c_2 + Q7b_3
   # regressions
     Conf ~ GenW + URM_Status
@@ -155,5 +155,10 @@ model <- '
 #fit <- sem(model, data = PLIC.PreOnly)
 fit <- sem(model, data = df.Centered, cluster = 'Class_ID')
 summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
-semPaths(fit, whatLabels = 'stand')
+# semPaths(fit, whatLabels = 'stand')
 ```
+
+```{r}
+table(df.Centered$Q7a_14, exclude = NULL)
+```
+
