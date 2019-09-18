@@ -158,7 +158,49 @@ summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
 # semPaths(fit, whatLabels = 'stand')
 ```
 
+**MC Analysis**
 ```{r}
-table(df.Centered$Q7a_14, exclude = NULL)
+df.MC <- df.Centered %>%
+  filter(!is.na(Q3c) & !is.na(Q4a)) %>%
+  mutate(Q3C.Score = ifelse(Q3c == 2, 1, 0),
+         Q4A.Score = ifelse(Q4a == 2, 1, 0),
+         MC.Score = Q3C.Score + Q4A.Score)
+
+t.test(df.MC$MC.Score ~ df.MC$Gender)
+t.test(df.MC$MC.Score ~ df.MC$URM_Status)
 ```
 
+**Likert Analysis**
+```{r}
+df.Likert <- df.Centered %>%
+  filter(!is.na(Q2c) & !is.na(Q3a)) %>%
+  mutate(Q2C.Score = case_when(
+    Q2c > 3 ~ 1,
+    Q2c < 3 ~ -1,
+    Q2c == 3 ~ 0
+  ),
+  Q3A.Score = case_when(
+    Q3a < 3 ~ 1,
+    Q3a > 3 ~ -1,
+    Q3a == 3 ~ 0
+  ),
+  Likert.Score = Q2C.Score + Q3A.Score)
+
+t.test(df.Likert$Likert.Score ~ df.Likert$Gender)
+t.test(df.Likert$Likert.Score ~ df.Likert$URM_Status)
+```
+
+**FR Analysis**
+```{r}
+df.FR <- df.Student %>%
+  filter(Survey == 'F') %>%
+  filter(TotalScores != 0)
+
+hist(df.FR$TotalScores, breaks = 10)
+
+t.test(df.FR$TotalScores ~ df.FR$Gender)
+t.test(df.FR$TotalScores ~ df.FR$URM_Status)
+
+cohen.d(df.FR$TotalScores ~ df.FR$Gender)
+cohen.d(df.FR$TotalScores ~ df.FR$URM_Status)
+```
