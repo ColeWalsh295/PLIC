@@ -12,8 +12,8 @@ library(lavaan)
 library(semPlot)
 library(MVN)
 library(infotheo)
-source('MultipleDiscreteMI.R')
-source('C:/Users/Cole/Documents/PLIC_DATA/PLIC_DataProcessing.R')
+source('MultipleDiscreteMI.R', local = TRUE)
+source('C:/Users/Cole/Documents/GitHub/PLIC-Tools/Process-Merge-Concat/PLIC_DataProcessing.R')
 ```
 
 **Create PLIC dataframe**
