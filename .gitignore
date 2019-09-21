@@ -7,3 +7,6 @@ PLIC-StudentLevel-Compare/Pre.html
 PLIC-StudentLevel-Compare/.Rhistory
 MutualInformation-FactorScores-ResponseChoices/qgraph.png
 MutualInformation-FactorScores-ResponseChoices/.Rhistory
+Statistical-Validation/PLIC_Utilities.R
+Statistical-Validation/PLIC_Validation.Rmd
+Statistical-Validation/PLIC_Validation_wImputation.Rmd
