@@ -13,7 +13,7 @@ library(semPlot)
 library(MVN)
 library(infotheo)
 source('MultipleDiscreteMI.R', local = TRUE)
-source('C:/Users/Cole/Documents/GitHub/PLIC-Tools/Process-Merge-Concat/PLIC_DataProcessing.R')
+source('C:/Users/Cole/Documents/GitHub/PLIC/Process-Merge-Concat/PLIC_DataProcessing.R')
 ```
 
 **Create PLIC dataframe**
@@ -98,12 +98,15 @@ Models.MI.df <- sapply(Models.df, MI.vec.to.bits, df_Features = scores$models) %
     select(Item, Question, Prop.Sel, MI) %>%
   arrange(desc(MI))
 
-Models.MI.df
+Models.MI.df.CI <- MI.CI(Models.df, scores$models, Models.MI.df, CI.Low = 0.025, CI.High = 0.975)
+
 labels.list <- c('Q2B_9', 'Q2B_21', 'Q3B_9', 'Q3B_21', 'Q2B_11', 'Q3B_11', 'Q2B_8', 'Q3B_23')
 
-ggplot(Models.MI.df, aes(x = Prop.Sel, y = MI, color = Question, shape = Question)) +
+ggplot(Models.MI.df.CI, aes(x = Prop.Sel, y = MI, color = Question, shape = Question)) +
   geom_point(size = 3.5, alpha = 0.25) +
+  geom_errorbar(aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 1, alpha = 0.25) +
   geom_point(data = Models.MI.df[Models.MI.df[, 'Item'] %in% labels.list,], aes(x = Prop.Sel, y = MI, color = Question), size = 3.5) +
+  geom_errorbar(data = Models.MI.df.CI[Models.MI.df.CI[, 'Item'] %in% labels.list,], aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 0.8, alpha = 1) +
   scale_shape_manual(values = c(15, 16, 17, 18)) +
   scale_color_manual(values = c("#0072b2", "#d55e00", "#009e73", "#009e73")) +
   scale_fill_manual(values = labels.list) +
@@ -114,6 +117,29 @@ ggplot(Models.MI.df, aes(x = Prop.Sel, y = MI, color = Question, shape = Questio
   labs(x = 'Fraction of times selected', y = 'Mutual information (bits)') +
   ylim(0, 0.31)
 ```
+
+**Models CI**
+```{r}
+MI.CI <- function(raw.dataframe, scores, out.dataframe, reps = 100, CI.Low = 0.05, CI.High = 0.95) {
+  df <- cbind(raw.dataframe, scores)
+  
+  df.boot <- replicate(reps, df[sample(1:nrow(df), replace = T),], simplify = F)
+  
+  MI.boot <- sapply(df.boot, function(x) apply(x, 2, MI.vec.to.bits, df_Features = x[, ncol(x)]))
+  
+  MI.CI <- apply(MI.boot, 1, quantile, probs = c(CI.Low, CI.High))
+  MI.CI <- data.frame(t(MI.CI))
+  MI.CI$Item <- toupper(row.names(MI.CI))
+  
+  dataframe.CI <- left_join(out.dataframe, MI.CI, 'Item')
+  colnames(dataframe.CI)[(ncol(dataframe.CI) - 1):ncol(dataframe.CI)] <- c('CI.Low', 'CI.High')
+  return(dataframe.CI)
+}
+
+Models.MI.df.CI
+```
+
+
 
 ```{r}
 scores <- discretize(scores.df, nbins = N_methods)
@@ -129,12 +155,16 @@ Methods.MI.df <- sapply(Methods.df, MI.vec.to.bits, df_Features = scores$methods
     select(Item, Question, Prop.Sel, MI) %>%
   arrange(desc(MI))
 
+Methods.MI.df.CI <- MI.CI(Methods.df, scores$methods, Methods.MI.df, CI.Low = 0.025, CI.High = 0.975)
+
 Methods.MI.df
 labels.list <- c('Q1D_61', 'Q1D_63', 'Q2D_35', 'Q2D_4', 'Q1D_3', 'Q2D_33', 'Q4B_4')
 
-ggplot(Methods.MI.df, aes(x = Prop.Sel, y = MI, color = Question, shape = Question)) +
+ggplot(Methods.MI.df.CI, aes(x = Prop.Sel, y = MI, color = Question, shape = Question)) +
   geom_point(size = 3.5, alpha = 0.25) +
+  geom_errorbar(aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 1, alpha = 0.25) +
   geom_point(data = Methods.MI.df[Methods.MI.df[, 'Item'] %in% labels.list,], aes(x = Prop.Sel, y = MI, color = Question), size = 3.5) +
+  geom_errorbar(data = Methods.MI.df.CI[Methods.MI.df.CI[, 'Item'] %in% labels.list,], aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 0.8, alpha = 1) +
   scale_shape_manual(values = c(15, 16, 17)) +
   scale_color_manual(values = c("#0072b2", "#d55e00", "#cc79a7")) +
   scale_fill_manual(values = labels.list) +
@@ -159,17 +189,21 @@ Actions.MI.df <- sapply(Actions.df, MI.vec.to.bits, df_Features = scores$actions
     select(Item, Question, Prop.Sel, MI) %>%
   arrange(desc(MI))
 
+Actions.MI.df.CI <- MI.CI(Actions.df, scores$actions, Actions.MI.df, CI.Low = 0.025, CI.High = 0.975)
+
 Actions.MI.df
 labels.list <- c('Q1E_1', 'Q1E_4', 'Q1E_13', 'Q2E_14', 'Q2E_6', 'Q3E_11', 'Q3E_13', 'Q3E_20')
 
-ggplot(Actions.MI.df, aes(x = Prop.Sel, y = MI, color = Question, shape = Question)) +
+ggplot(Actions.MI.df.CI, aes(x = Prop.Sel, y = MI, color = Question, shape = Question)) +
   geom_point(size = 3.5, alpha = 0.25) +
+  geom_errorbar(aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 1, alpha = 0.25) +
   geom_point(data = Actions.MI.df[Actions.MI.df[, 'Item'] %in% labels.list,], aes(x = Prop.Sel, y = MI, color = Question), size = 3.5) +
+  geom_errorbar(data = Actions.MI.df.CI[Actions.MI.df.CI[, 'Item'] %in% labels.list,], aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 0.8, alpha = 1) +
   scale_shape_manual(values = c(15, 16, 17)) +
   scale_color_manual(values = c("#0072b2", "#d55e00", "#009e73")) +
   scale_fill_manual(values = labels.list) +
   geom_text_repel(data = subset(Actions.MI.df, Item %in% labels.list),
-            aes(x = Prop.Sel, y = MI, color = Question, label = Item), nudge_x = 0, nudge_y = 0.01, size = 6) +
+            aes(x = Prop.Sel, y = MI, color = Question, label = Item), nudge_x = 0.04, nudge_y = 0.01, size = 6) +
   theme_classic() +
   theme(text = element_text(size = 18)) +
   labs(x = 'Fraction of times selected', y = 'Mutual information (bits)')
