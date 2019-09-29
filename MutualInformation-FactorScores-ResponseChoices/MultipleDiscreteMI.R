@@ -37,3 +37,28 @@ MI.vec.to.bits <- function (Response_vec, df_Features) {
   MI <- round(natstobits(mutinformation(Response_vec, df_Features)), 3)
   return(MI)
 }
+
+MI.CI <- function(raw.dataframe, scores, reps = 1000, CI.Low = 0.025, 
+                  CI.High = 0.975) {
+  
+  out.dataframe <- sapply(raw.dataframe, MI.vec.to.bits, df_Features = scores) %>%
+    data.frame(.) %>%
+    `colnames<-`(c("MI")) %>%
+    mutate(Item = sapply(colnames(raw.dataframe), function(x) toupper(x)),
+           Prop.Sel = round(colMeans(raw.dataframe), 3),
+           Question = sapply(Item, function(x) toupper(substr(x, 1, 3)))) %>%
+    select(Item, Question, Prop.Sel, MI) %>%
+    arrange(desc(MI))
+  
+  df <- cbind(raw.dataframe, scores)
+  df.boot <- replicate(reps, df[sample(1:nrow(df), replace = T),], simplify = F)
+  MI.boot <- sapply(df.boot, function(x) apply(x, 2, MI.vec.to.bits, df_Features = x[, ncol(x)]))
+  
+  MI.CI <- apply(MI.boot, 1, quantile, probs = c(CI.Low, CI.High))
+  MI.CI <- data.frame(t(MI.CI))
+  MI.CI$Item <- toupper(row.names(MI.CI))
+  
+  dataframe.CI <- left_join(out.dataframe, MI.CI, 'Item')
+  colnames(dataframe.CI)[(ncol(dataframe.CI) - 1):ncol(dataframe.CI)] <- c('CI.Low', 'CI.High')
+  return(dataframe.CI)
+}
