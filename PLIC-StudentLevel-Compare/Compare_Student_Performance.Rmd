@@ -15,55 +15,50 @@ library(semPlot)
 ```{r}
 df <- fread('Pre_Valid_Concat_Scored.csv') %>%
   Clean.PLIC(., Matched = FALSE, Collapse.vars = FALSE) %>%
-  Merge.CIS(., Matched = FALSE)
+  Merge.CIS(., Matched = FALSE) %>%
+  filter(Survey == 'C')
 
 # Gender non-binaries?
 table(df$Gender, exclude = NULL)
 
 df <- fread('Pre_Valid_Concat_Scored.csv') %>%
   Clean.PLIC(., Matched = FALSE) %>%
-  Merge.CIS(., Matched = FALSE)
+  Merge.CIS(., Matched = FALSE) %>%
+  filter(Survey == 'C')
 ```
 
 **Get School/Class/Student statistics**
 ```{r}
-df %>%
-  summarize(N.Students = nrow(.), N.Classes = length(unique(.[, 'Class_ID'])), N.Schools = length(unique(.[, 'School'])))
-# unique(df[, 'School']) # Check for duplicate schools
-
 table(df[!duplicated(df$School),]$Institution_Type, exclude = NULL)
 table(df[!duplicated(df$Class_ID),]$Lab_Level, exclude = NULL)
 
-# Only complete demographics
-df.Student <- df %>%
-  filter(!is.na(Gender) & !is.na(Ethnicity) & !is.na(Major) & !is.na(Class_Standing))
-df.Student %>%
+df %>%
   summarize(N.Students = nrow(.), N.Classes = length(unique(.[, 'Class_ID'])), N.Schools = length(unique(.[, 'School'])))
 
-table(df.Student[!duplicated(df.Student$School),]$Institution_Type, exclude = NULL)
-table(df.Student[!duplicated(df.Student$Class_ID),]$Lab_Level, exclude = NULL)
-
-# CR demographics
-df.CR <- df.Student %>%
-  filter(Survey == 'C')
-
-df.CR %>%
+# Filter by student demographics
+df.student <- df %>%
+  filter(!is.na(Gender) & !is.na(Ethnicity) & !is.na(Major))
+df.student %>%
   summarize(N.Students = nrow(.), N.Classes = length(unique(.[, 'Class_ID'])), N.Schools = length(unique(.[, 'School'])))
 
-table(df.CR[!duplicated(df.CR$School),]$Institution_Type, exclude = NULL)
-table(df.CR[!duplicated(df.CR$Class_ID),]$Lab_Level, exclude = NULL)
+df.class <- data.table(df.student)[, `:=`(N.students = .N), .(Class_ID)][N.students > 7]
+data.frame(df.class) %>% 
+  summarize(N.Students = nrow(.), N.Classes = length(unique(.[, 'Class_ID'])), N.Schools = length(unique(.[, 'School'])))
+
+table(df.class[!duplicated(df.class$School),]$Institution_Type, exclude = NULL)
+table(df.class[!duplicated(df.class$Class_ID),]$Lab_Level, exclude = NULL)
 ```
 
 **Mutate class/student variables**
 ```{r}
-df.Course <- df.CR %>%
+df.classLevel <- df.class %>%
   mutate(Lab_Level = relevel(as.factor(case_when(
     (Lab_Level == 'Intro-Algebra') | (Lab_Level == 'Intro-Calculus') ~ 'FY',
     (Lab_Level == 'Sophomore') | (Lab_Level == 'Junior') | (Lab_Level == 'Senior') ~ 'BFY',
     TRUE ~ NA_character_
   )), ref = 'FY'))
 
-df.Centered <- Create.Class.Variables(df.Course %>% mutate(PreScores = TotalScores))
+df.Centered <- Create.Class.Variables(df.classLevel %>% mutate(PreScores = TotalScores))
 
 df.Centered$GenW <- df.Centered$Gender == 'Women'
 df.Centered$MajorEng <- df.Centered$Major == 'Engineering'
@@ -93,7 +88,7 @@ Desc.stats <- function(df, var){
 Desc.stats(df.Centered, 'Gender')
 Desc.stats(df.Centered, 'URM_Status')
 Desc.stats(df.Centered, 'Major')
-Desc.stats(df.Centered, 'Class_Standing')
+Desc.stats(df.Centered, 'Lab_Level')
 ```
 
 **Pairwise comparisons**
@@ -107,23 +102,23 @@ cohen.d(TotalScores ~ URM_Status, df.Centered)
 
 **LMER**
 ```{r}
-mod_null <- lmer(TotalScores ~ (1 | Class_ID), df.Centered)
+mod_null <- lmer(PreScores_GrandMC ~ (1 | Class_ID), df.Centered)
 summary(mod_null)
 r.squaredGLMM(mod_null)
 
-mod_student <- lmer(TotalScores ~ Gender + Major + URM_Status + (1 | Class_ID), df.Centered)
+mod_student <- lmer(PreScores_GrandMC ~ Gender + Major + URM_Status + (1 | Class_ID), df.Centered)
 summary(mod_student)
 r.squaredGLMM(mod_student)
 
-mod_course <- lmer(TotalScores ~ Gender + Major + URM_Status + Lab_Level + (1 | Class_ID), df.Centered)
+mod_course <- lmer(PreScores_GrandMC ~ Gender + Major + URM_Status + Lab_Level + (1 | Class_ID), df.Centered)
 summary(mod_course)
 r.squaredGLMM(mod_course)
 
-mod_interaction <- lmer(TotalScores ~ Gender*URM_Status + Major + Lab_Level + (1 | Class_ID), df.Centered)
+mod_interaction <- lmer(PreScores_GrandMC ~ Gender*URM_Status + Major + Lab_Level + (1 | Class_ID), df.Centered)
 summary(mod_interaction)
 r.squaredGLMM(mod_interaction)
 
-mod_interactionMajor <- lmer(TotalScores ~ (Gender + URM_Status)*Major + Lab_Level + (1 | Class_ID), df.Centered)
+mod_interactionMajor <- lmer(PreScores_GrandMC ~ (Gender + URM_Status)*Major + Lab_Level + (1 | Class_ID), df.Centered)
 summary(mod_interactionMajor)
 r.squaredGLMM(mod_interactionMajor)
 
