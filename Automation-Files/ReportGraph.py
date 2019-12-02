@@ -63,13 +63,13 @@ def GenerateGraph(OtherPreFile, OtherPostFile, Level, ID, Weightsdf, **Dataframe
     GenerateQuestionsGraph(df_Concat)
 
     if('PRE' in Dataframes.keys()):
-        dfYour_Pre['Course_Level'] = Level # Append the new pre data to the historical data for future use
+        dfYour_PreS['Course_Level'] = Level # Append the new pre data to the historical data for future use
         dfOther_Pre = pd.concat([dfOther_Pre, dfYour_PreS], join = 'inner', axis = 0)
-        # dfOther_Pre.to_csv(OtherPreFile, index = False)
+        dfOther_Pre.to_csv(OtherPreFile, index = False)
 
-        dfYour_Post['Course_Level'] = Level # Append the new post data to the historical data for future use
+        dfYour_PostS['Course_Level'] = Level # Append the new post data to the historical data for future use
         dfOther_Post = pd.concat([dfOther_Post, dfYour_PostS], join = 'inner', axis = 0)
-        # dfOther_Post.to_csv(OtherPostFile, index = False)
+        dfOther_Post.to_csv(OtherPostFile, index = False)
 
         if('MID' in Dataframes.keys()):
             return NValidPre, NValidMid, NValidPost, dfYour_Pre, dfYour_Mid, dfYour_Post
