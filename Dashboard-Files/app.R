@@ -13,9 +13,9 @@ source('PLIC_UI.R', local = TRUE)
 source('PLIC_Server.R', local = TRUE)
 
 # Get Complete dataset, remove free response only responses
-Header.df <- fread('C:/Users/Cole/Documents/GRA_Summer2019/PLIC_Shiny/Headers.csv')
+Header.df <- fread('Headers.csv')
 
-PLIC.Complete.df <- fread('C:/Users/Cole/Documents/GRA_Summer2019/PLIC_Shiny/Complete_Concat_DeIdentified.csv')
+PLIC.Complete.df <- fread('Complete_Concat_DeIdentified.csv')
 PLIC.Complete.df$Student.ID.Anon <- row.names(PLIC.Complete.df)
 PLIC.Complete.df <- PrePost.Long(PLIC.Complete.df)
 
@@ -34,7 +34,7 @@ mod.cfa.HYP <- cfa(PLIC.model.HYP, data = PLIC.CR, std.lv = TRUE, estimator = 'M
 scores.df <- data.frame(lavPredict(mod.cfa.HYP))
 PLIC.CR <- cbind(PLIC.CR, scores.df) # Merge factor scores back to the dataframe
 
-PLIC.Merged.df <- fread('C:/Users/Cole/Documents/GRA_Summer2019/PLIC_Shiny/Complete_Concat_DeIdentified.csv') %>%
+PLIC.Merged.df <- fread('Complete_Concat_DeIdentified.csv') %>%
   filter(Survey_x == 'C' & Survey_y == 'C')
 PLIC.Merged.df$Student.ID.Anon <- row.names(PLIC.Merged.df)
 PLIC.Merged.df <- PrePost.Long(PLIC.Merged.df)

@@ -26,11 +26,11 @@ def ValMat(DoMatch = True, **Dataframes):
 
 def Validate(df, Survey):
     if(Survey == 'POST'):
-        df = df[(df['Finished'] == 1) & (df['Unnamed: 8'] == 1) & (df['Q6d'] == 2)] # Drop students who are not consenting, did not finish, or are not at least 18 at Post
-        # df = df[(df['V5'] == 1) & (df['Unnamed: 7'] == 1) & (df['Q6d'] == 2)]
+        # df = df[(df['Finished'] == 1) & (df['Unnamed: 8'] == 1) & (df['Q6d'] == 2)] # Drop students who are not consenting, did not finish, or are not at least 18 at Post
+        df = df[(df['V5'] == 1) & (df['Unnamed: 7'] == 1) & (df['Q6d'] == 2)]
     else:
-        df = df[(df['Finished'] == 1)] # Drop students who did not finish the pre/mid survey
-        # df = df[(df['V5'] == 1)]
+        # df = df[(df['Finished'] == 1)] # Drop students who did not finish the pre/mid survey
+        df = df[(df['V5'] == 1)]
     df = df.dropna(how = 'all', subset = ['Q5a', 'Q5b', 'Q5c']) # Drop students who did not provide any id or first/last name
     df = df[(df['Qt1_3'] >= 30) | (df['Qt2_3'] >= 30) | (df['Qt3_3'] >= 30) | (df['Qt4_3'] >= 30)] # Drop students who do not spend at least 30s on one page
 
