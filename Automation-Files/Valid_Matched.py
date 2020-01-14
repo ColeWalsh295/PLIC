@@ -116,7 +116,7 @@ def ProcessNames(df):
         df['Q5a'] = df['Q5a'].astype(str).str.split('@').str.get(0).str.lower() # Keep only first part of email addresses and take the lower case of all ids
         df['FullName'] = (df['Q5b'].apply(str).str.lower() + df['Q5c'].apply(str).str.lower()).str.replace('\W', '') # Get full name in lower case with no white space
         df['BackName'] = (df['Q5c'].apply(str).str.lower() + df['Q5b'].apply(str).str.lower()).str.replace('\W', '') # Get reverse full name in lower case with no white space
-        df = df[df['FullName'].map(len) > 2] # Keep only full names with more than 2 characters
+        df.loc[df['FullName'].map(len) <= 2, 'FullName'] = '' # Keep only full names with more than 2 characters
         df = df.drop_duplicates(subset = ['FullName']).drop_duplicates(subset = ['Q5a']) # Drop second entry if there are duplicate full names
 
         return df

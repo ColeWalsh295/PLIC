@@ -1,4 +1,5 @@
 ```{r}
+library(broom.mixed)
 library(tidyverse)
 library(data.table)
 source('C:/Users/Cole/Documents/GitHub/PLIC/Process-Merge-Concat/PLIC_DataProcessing.R')
@@ -10,6 +11,8 @@ library(MuMIn)
 library(stargazer)
 library(lavaan)
 library(semPlot)
+library(sjPlot)
+theme_set(theme_classic(base_size = 10))
 ```
 
 **Import complete data**
@@ -75,7 +78,11 @@ table(df[!duplicated(df$Class_ID),]$Lab_Purpose, exclude = NULL)
 **Mutate class/student variables**
 ```{r}
 df <- df %>%
-  mutate(Lab_Purpose = relevel(as.factor(Lab_Purpose), ref = 'Reinforce physics concepts'))
+  mutate(ender = relevel(as.factor(Gender), ref = 'Men'),
+         URM_Status = relevel(as.factor(URM_Status), ref = 'URM'),
+         Major = relevel(as.factor(Major), ref = 'Other'),
+         LabLevel = relevel(as.factor(Lab_Level), ref = 'Intro-Algebra'),
+         Lab_Purpose = relevel(as.factor(Lab_Purpose), ref = 'Reinforce physics concepts'))
 
 df.Centered <- Create.Class.Variables(df)
 
@@ -89,7 +96,11 @@ df.Centered$MajorPhys <- df.Centered$Major == 'Physics'
 table(df.Centered$Gender, exclude = NULL)
 table(df.Centered$URM_Status)
 table(df.Centered$Major)
+table(df.Centered$Lab_Level, exclude = NULL)
 table(df.Centered$Lab_Purpose, exclude = NULL)
+table(df.Centered$Gender, df.Centered$Lab_Level)
+table(df.Centered$URM_Status, df.Centered$Lab_Level)
+table(df.Centered$Major, df.Centered$Lab_Level)
 table(df.Centered$Gender, df.Centered$Lab_Purpose)
 table(df.Centered$URM_Status, df.Centered$Lab_Purpose)
 table(df.Centered$Major, df.Centered$Lab_Purpose)
@@ -106,12 +117,13 @@ Desc.stats <- function(df, var){
 Desc.stats(df.Centered, 'Gender')
 Desc.stats(df.Centered, 'URM_Status')
 Desc.stats(df.Centered, 'Major')
+Desc.stats(df.Centered, 'Lab_Level')
 Desc.stats(df.Centered, 'Lab_Purpose')
 ```
 
 **LMER**
 ```{r}
-mod.null <- lmer(PostScores ~ (1 | Class_ID), df.Centered)
+mod.null <- lmer(PostScores ~ (1 | School/Class_ID), df.Centered)
 summary(mod.null)
 r.squaredGLMM(mod.null)
 
@@ -123,10 +135,15 @@ mod.interaction <- lmer(PostScores ~ PreScores.cwc + PreScores.cm + (Gender + UR
 summary(mod.interaction)
 r.squaredGLMM(mod.interaction)
 
-# class(mod.null) <- "lmerMod"
-# class(mod.main) <- "lmerMod"
-# class(mod.interaction) <- "lmerMod"
-# stargazer(mod.null, mod.main, mod.interaction, star.cutoffs = c(0.05, 0.01, 0.001), intercept.bottom = FALSE, out = 'Results.tex', intercept.top = TRUE, omit.stat = 'all')
+class(mod.null) <- "lmerMod"
+class(mod.main) <- "lmerMod"
+class(mod.interaction) <- "lmerMod"
+stargazer(mod.null, mod.main, mod.interaction, star.cutoffs = c(0.05, 0.01, 0.001), intercept.bottom = FALSE, out = 'Results.tex', intercept.top = TRUE, omit.stat = 'all')
+```
+
+**Coefs plot**
+```{r}
+plot_model(mod.interaction, type = 'eff', terms = c('URM_Status', 'Lab_Purpose'), dot.size = 6, line.size = 1, ci.lvl = 0.67, title = '')
 ```
 
 **SEM Analysis**
