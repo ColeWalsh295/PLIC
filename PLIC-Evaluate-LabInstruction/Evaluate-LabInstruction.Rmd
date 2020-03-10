@@ -12,7 +12,10 @@ library(stargazer)
 library(lavaan)
 library(semPlot)
 library(sjPlot)
-theme_set(theme_classic(base_size = 10))
+library(taRifx)
+library(rstatix)
+library(corrgram)
+library(lattice)
 ```
 
 **Import complete data**
@@ -60,35 +63,40 @@ data.frame(df[pre.rate == 0]) %>%
 data.frame(df[post.rate == 0]) %>%
   summarize(N.Classes = length(unique(.[, 'Class_ID'])))
 
-df <- df[pre.rate >= 0.4 & post.rate >= 0.4]
+df.complete <- df[pre.rate >= 0.4 & post.rate >= 0.4]
 
-data.frame(df) %>%
+data.frame(df.complete) %>%
   summarize(N.Students = nrow(.), N.Classes = length(unique(.[, 'Class_ID'])), N.Schools = length(unique(.[, 'School'])))
 
-df <- df[Survey_x == 'C' & Survey_y == 'C']
+df.matched <- df.complete[Survey_x == 'C' & Survey_y == 'C']
 
-data.frame(df) %>%
+data.frame(df.matched) %>%
   summarize(N.Students = nrow(.), N.Classes = length(unique(.[, 'Class_ID'])), N.Schools = length(unique(.[, 'School'])))
 
-table(df[!duplicated(df$School),]$Institution_Type, exclude = NULL)
-table(df[!duplicated(df$Class_ID),]$Lab_Level, exclude = NULL)
-table(df[!duplicated(df$Class_ID),]$Lab_Purpose, exclude = NULL)
+table(df.matched[!duplicated(df.matched$School),]$Institution_Type, exclude = NULL)
+table(df.matched[!duplicated(df.matched$Class_ID),]$Lab_Level, exclude = NULL)
+table(df.matched[!duplicated(df.matched$Class_ID),]$Lab_Purpose, exclude = NULL)
 ```
 
 **Mutate class/student variables**
 ```{r}
-df <- df %>%
-  mutate(ender = relevel(as.factor(Gender), ref = 'Men'),
-         URM_Status = relevel(as.factor(URM_Status), ref = 'URM'),
+df.matched <- df.matched %>%
+  mutate(Gender = relevel(as.factor(Gender), ref = 'Men'),
+         URM_Status = relevel(as.factor(URM_Status), ref = 'Majority'),
          Major = relevel(as.factor(Major), ref = 'Other'),
-         LabLevel = relevel(as.factor(Lab_Level), ref = 'Intro-Algebra'),
+         Lab_Level = relevel(as.factor(Lab_Level), ref = 'Intro-Algebra'),
          Lab_Purpose = relevel(as.factor(Lab_Purpose), ref = 'Reinforce physics concepts'))
 
-df.Centered <- Create.Class.Variables(df)
+df.Centered <- Create.Class.Variables(df.matched)
 
 df.Centered$GenW <- df.Centered$Gender == 'Women'
+df.Centered$GenNon <- df.Centered$Gender == 'Non-binary'
+df.Centered$URM_StatusURM <- df.Centered$URM_Status == 'URM'
 df.Centered$MajorEng <- df.Centered$Major == 'Engineering'
 df.Centered$MajorPhys <- df.Centered$Major == 'Physics'
+df.Centered$PurposeSkills <- df.Centered$Lab_Purpose == 'Develop lab skills'
+df.Centered$PurposeBoth <- df.Centered$Lab_Purpose == 'Both about equally'
+df.Centered$LevelCalc <- df.Centered$Lab_Level == 'Intro-Calculus'
 ```
 
 **Demographic Breakdown**
@@ -127,11 +135,11 @@ mod.null <- lmer(PostScores ~ (1 | School/Class_ID), df.Centered)
 summary(mod.null)
 r.squaredGLMM(mod.null)
 
-mod.main <- lmer(PostScores ~ PreScores.cwc + PreScores.cm + Gender + URM_Status + Major + Lab_Purpose + Lab_Level + (1 | School/Class_ID), df.Centered)
+mod.main <- lmer(PostScores ~ PreScores.cwc + PreScores.cmc + Gender + URM_Status + Major + Lab_Purpose + Lab_Level + (1 | School/Class_ID), df.Centered)
 summary(mod.main)
 r.squaredGLMM(mod.main)
 
-mod.interaction <- lmer(PostScores ~ PreScores.cwc + PreScores.cm + (Gender + URM_Status) * Lab_Purpose + Major + Lab_Level + (1 | School/Class_ID), df.Centered)
+mod.interaction <- lmer(PostScores ~ PreScores.cwc + PreScores.cmc + (Gender + URM_Status) * Lab_Purpose + Major + Lab_Level + (1 | School/Class_ID), df.Centered)
 summary(mod.interaction)
 r.squaredGLMM(mod.interaction)
 
@@ -139,102 +147,264 @@ class(mod.null) <- "lmerMod"
 class(mod.main) <- "lmerMod"
 class(mod.interaction) <- "lmerMod"
 stargazer(mod.null, mod.main, mod.interaction, star.cutoffs = c(0.05, 0.01, 0.001), intercept.bottom = FALSE, out = 'Results.tex', intercept.top = TRUE, omit.stat = 'all')
+
+plot(mod.interaction, xlab = 'Fitted values', ylab = 'Residuals')
+qqmath(mod.interaction)
 ```
 
 **Coefs plot**
 ```{r}
-plot_model(mod.interaction, type = 'eff', terms = c('URM_Status', 'Lab_Purpose'), dot.size = 6, line.size = 1, ci.lvl = 0.67, title = '')
+set_theme(base = theme_classic(base_size = 12))
+
+# p1 <- plot_model(mod.interaction, type = 'eff', terms = c('Gender [Men, Women]', 'Lab_Purpose'), dot.size = 4, line.size = 1, ci.lvl = 0.67, title = '', axis.title = 'Predicted posttest scores', colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
+#   theme(legend.position = 'right')
+
+p1 <- plot_model(mod.interaction, type = 'eff', terms = c('URM_Status', 'Lab_Purpose'), dot.size = 4, line.size = 1, ci.lvl = 0.67, title = '', axis.title = 'Predicted posttest scores', colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
+  theme(legend.position = 'right')
+
+p2 <- p1
+p2$data$group <- factor(p2$data$group, levels = c("Reinforce physics concepts", "Both about equally", "Develop lab skills"))
+p2
 ```
 
-**SEM Analysis**
 ```{r}
-model <- '
-  level: 1
-  # measurement model
-    Conf =~ Q7a_10 + Q7a_11  + Q7a_13
-    Att =~ Q7b_1 + Q7b_2 + Q7b_3 + Q7b_4
-    Eff =~ Q7c_1 + Q7c_2 + Q7b_3
-  # regressions
-    Conf ~ GenW + URM_Status
-    Att ~ GenW + URM_Status
-    Eff ~ GenW + URM_Status
-    TotalScores ~ GenW + URM_Status + MajorEng + MajorPhys + Conf + Att + Eff
-  level: 2
-    TotalScores ~ Lab_Level
+mod <- '
+  # latent variables
+  agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5
 '
 
-#fit <- sem(model, data = PLIC.PreOnly)
-fit <- sem(model, data = df.Centered, cluster = 'Class_ID')
+df.labs[, 2:ncol(df.labs)] <- data.frame(lapply(df.labs[, 2:ncol(df.labs)], function(x) factor(droplevels(x))))
+fit <- cfa(mod, data = df.labs)
+# summary(fit, fit.measures = TRUE)
+```
+
+
+**Use external model**
+```{r}
+df.labs <- df.Centered  %>%
+  filter(!duplicated(Class_ID)) %>%
+  select(Class_ID, contains('Q28'), contains('Q29'), contains('Q31'))
+
+df.labs[, 2:ncol(df.labs)] <- data.frame(lapply(df.labs[, 2:ncol(df.labs)], function(x) factor(as.vector(x), levels = c('1', '2', '3', '4', '5'), ordered = TRUE)))
+
+mod.ext <- '
+  # latent variables
+  agency =~ 0.800 * Q29_1 + 0.897 * Q29_2 + 0.768 * Q29_3 + 0.800 * Q29_4 + 0.683 * Q29_5 + 0.720 * Q31_6
+  modeling =~ 0.781 * Q31_2 + 0.842 * Q31_1 + 0.791 * Q31_4 + 0.859 * Q31_3 + 0.563 * Q31_5
+
+  # covariances
+  agency ~~ 0.509 * modeling 
+
+  # intercepts
+  Q29_1 ~ 0; Q29_2 ~ 0; Q29_3 ~ 0; Q29_4 ~ 0; Q29_5 ~ 0; Q31_6 ~ 0; Q31_2 ~ 0; Q31_1 ~ 0; Q31_4 ~ 0; Q31_3 ~ 0; Q31_5 ~ 0; agency ~ 0; modeling ~ 0
+
+  # thresholds
+  Q29_1 | -0.731 * t1 + 0.188 * t2 + 1.079 * t3 #+ 1.938 * t4
+  Q29_2 | -1.003 * t1 + -0.443 * t2 + 0.395 * t3 + 1.355 * t4
+  Q29_3 | -0.581 * t1 + 0.022 * t2 + 0.899 * t3 + 1.708 * t4
+  Q29_4 | -1.161 * t1 + -0.581 * t2 + 0.324 * t3 #+ 1.543 * t4
+  # Q29_5 | -1.871 * t1 + -1.003 * t2 + -0.044 * t3 + 0.950 * t4
+  Q29_5 |-1.003 * t1 + -0.044 * t2 + 0.950 * t3
+  Q31_6 | -1.383 * t1 + -0.542 * t2 + 0.431 * t3 + 1.328 * t4
+  Q31_2 | -1.871 * t1 + -0.835 * t2 + 0.199 * t3 #+ 1.508 * t4
+  Q31_1 | -1.708 * t1 + -0.702 * t2 + 0.395 * t3 #+ 1.474 * t4
+  Q31_4 | -1.205 * t1 + -0.278 * t2 + 0.805 * t3 #+ 2.015 * t4
+  Q31_3 | -1.099 * t1 + 0.011 * t2 + 1.059 * t3 #+ 2.107 * t4
+  # Q31_5 | -1.871 * t1 + -1.079 * t2 + -0.077 * t3 + 1.205 * t4
+  Q31_5 | -1.079 * t1 + -0.077 * t2 + 1.205 * t3
+
+  # variances
+  Q29_1 ~~ 0.360 * Q29_1
+  Q29_2 ~~ 0.196 * Q29_2
+  Q29_3 ~~ 0.410 * Q29_3
+  Q29_4 ~~ 0.360 * Q29_4
+  Q29_5 ~~ 0.533 * Q29_5
+  Q31_6 ~~ 0.482 * Q31_6
+  Q31_2 ~~ 0.389 * Q31_2
+  Q31_1 ~~ 0.291 * Q31_1
+  Q31_4 ~~ 0.375 * Q31_4
+  Q31_3 ~~ 0.262 * Q31_3
+  Q31_5 ~~ 0.683 * Q31_5
+  agency ~~ 1 * agency
+  modeling ~~ 1 * modeling
+
+  # scaling factors
+  Q29_1 ~*~ 1 * Q29_1
+  Q29_2 ~*~ 1 * Q29_2
+  Q29_3 ~*~ 1 * Q29_3
+  Q29_4 ~*~ 1 * Q29_4
+  Q29_5 ~*~ 1 * Q29_5
+  Q31_6 ~*~ 1 * Q31_6
+  Q31_2 ~*~ 1 * Q31_2
+  Q31_1 ~*~ 1 * Q31_1
+  Q31_4 ~*~ 1 * Q31_4
+  Q31_3 ~*~ 1 * Q31_3
+  Q31_5 ~*~ 1 * Q31_5
+'
+
+fit <- cfa(mod.ext, data = df.labs, do.fit = FALSE)
+
+df.CFA <- cbind(df.labs, lavPredict(fit))
+df.SEM <- left_join(df.Centered, df.CFA, by = 'Class_ID')
+
+cor(df.SEM[!duplicated(df.SEM$Class_ID), c('agency', 'modeling', 'PurposeSkills', 'PurposeBoth', 'LevelCalc')])
+
+mod.SEM <- '
+  PostScores ~ PreScores + GenW + GenNon + URM_StatusURM + MajorEng + MajorPhys + PurposeSkills + PurposeBoth + LevelCalc + agency + modeling
+  agency ~ PurposeSkills + PurposeBoth + LevelCalc
+  modeling ~ PurposeSkills + PurposeBoth + LevelCalc
+'
+sd(df.CFA$modeling)
+
+fit <- sem(mod.SEM, df.SEM)
 summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
-# semPaths(fit, whatLabels = 'stand')
+semPaths(fit, whatLabels = 'est')
 ```
 
-**DIF Analysis**
+**Post-hoc effect of type of investigation**
 ```{r}
-library(difR)
-library(infotheo)
+df.SEM$Q28_2.y <- factor(as.vector(df.SEM$Q28_2.y), levels = c('1', '2', '3', '4'), ordered = TRUE)
 
-df.dicho <- df.Centered %>%
-  mutate(Q1Bs.med = 1 * (Q1Bs >= median(Q1Bs)),
-         Q1Ds.med = 1 * (Q1Ds >= median(Q1Ds)),
-         Q1Es.med = 1 * (Q1Es >= median(Q1Es)),
-         Q2Bs.med = 1 * (Q2Bs >= median(Q2Bs)),
-         Q2Ds.med = 1 * (Q2Ds >= median(Q2Ds)),
-         Q2Es.med = 1 * (Q2Es >= median(Q2Es)),
-         Q3Bs.med = 1 * (Q3Bs >= median(Q3Bs)),
-         Q3Ds.med = 1 * (Q3Ds >= median(Q3Ds)),
-         Q3Es.med = 1 * (Q3Es >= median(Q3Es)),
-         Q4Bs.med = 1 * (Q4Bs >= median(Q4Bs)))
-
-difMH(df.dicho[, c('Q1Bs.med', 'Q1Ds.med', 'Q1Es.med', 'Q2Bs.med', 'Q2Ds.med', 'Q2Es.med', 'Q3Bs.med',
-                      'Q3Ds.med', 'Q3Es.med', 'Q4Bs.med')], group = df.dicho$URM_Status, focal.name = 'URM',
-      match = discretize(df.dicho$PreScores)$X, p.adjust.method = 'holm')
+df.class <- df.SEM[!duplicated(df.SEM$Class_ID),]
+kruskal.test(Q28_2.y ~ Lab_Purpose, df.class)
 ```
 
 
-**MC Analysis**
 ```{r}
-df.MC <- df.Centered %>%
-  filter(!is.na(Q3c) & !is.na(Q4a)) %>%
-  mutate(Q3C.Score = ifelse(Q3c == 2, 1, 0),
-         Q4A.Score = ifelse(Q4a == 2, 1, 0),
-         MC.Score = Q3C.Score + Q4A.Score)
+df.SEM$Q28_2.y <- factor(as.vector(df.SEM$Q28_2.y), levels = c('1', '2', '3', '4'), ordered = TRUE)
 
-t.test(df.MC$MC.Score ~ df.MC$Gender)
-t.test(df.MC$MC.Score ~ df.MC$URM_Status)
+#df.SEM[, c('Q28_1.y', 'Q28_2.y', 'Q28_3.y')] <- data.frame(lapply(df.SEM[, c('Q28_1.y', 'Q28_2.y', 'Q28_3.y')], function(x) as.numeric(x)))
+
+#df.labs$Q28_2 <- factor(as.vector(df.labs$Q28_2), levels = c('1', '2', '3', '4'), ordered = TRUE)
+
+#df.labs[, c('Q28_1', 'Q28_2', 'Q28_3')] <- data.frame(lapply(df.labs[, c('Q28_1', 'Q28_2', 'Q28_3')], function(x) as.numeric(x)))
+
+mod.SEM <- '
+  PostScores ~ PreScores + PurposeSkills + investigation
+
+  investigation =~ Q28_1.y + Q28_3.y
+  investigation ~ PurposeSkills
+  #Q28_3.y ~ PurposeSkills + PurposeBoth
+'
+cor(df.SEM[!duplicated(df.SEM$Class_ID), 'PurposeSkills'], as.numeric(df.SEM[!duplicated(df.SEM$Class_ID), ]$Q28_1.y))
+#cor(df.labs$agency, (df.SEM$PostScores - df.SEM$PreScores))
+#head(df.SEM)
+fit <- sem(mod.SEM, df.SEM)
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+semPaths(fit, whatLabels = 'est')
+
+set_theme(base = theme_classic(base_size = 9))
+
+ggplot(df.SEM[!duplicated(df.SEM$Class_ID),], aes(x = Q28_1.y, fill = Lab_Purpose)) +
+  geom_histogram(stat = 'count') + 
+  scale_fill_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
+  xlab('Verify known principles') +
+  ylab('Number of classes') +
+  scale_x_discrete(labels = c('Never', 'Rarely', 'Sometimes', 'Often', 'Always'))
 ```
 
-**Likert Analysis**
+
+**Multiple pairwise comparisons**
 ```{r}
-df.Likert <- df.Centered %>%
-  filter(!is.na(Q2c) & !is.na(Q3a)) %>%
-  mutate(Q2C.Score = case_when(
-    Q2c > 3 ~ 1,
-    Q2c < 3 ~ -1,
-    Q2c == 3 ~ 0
-  ),
-  Q3A.Score = case_when(
-    Q3a < 3 ~ 1,
-    Q3a > 3 ~ -1,
-    Q3a == 3 ~ 0
-  ),
-  Likert.Score = Q2C.Score + Q3A.Score)
+df.class <- japply(df.Centered, grepl('Q28|Q29|Q31|Q32|Q33', names(df.Centered)), 
+                   function(x) as.numeric(levels(x))[x]) %>%
+  filter(!duplicated(Class_ID)) %>%
+  select(c('Lab_Purpose', grep('Q28|Q29|Q31|Q32|Q33', names(df.Centered)))) %>%
+  filter(Lab_Purpose != 'Both about equally') %>%
+  mutate(Lab_Purpose = droplevels(Lab_Purpose))
 
-t.test(df.Likert$Likert.Score ~ df.Likert$Gender)
-t.test(df.Likert$Likert.Score ~ df.Likert$URM_Status)
+
+wilcox.summary <- wilcox_effsize(df.class, Q28_1 ~ Lab_Purpose, ci = TRUE, conf.level = 0.67, nboot = 100)[, c('.y.', 'effsize', 'conf.low', 'conf.high')]
+for(col in colnames(df.class[, 3:ncol(df.class)])){
+  wilcox.summary <- rbind(wilcox.summary, wilcox_effsize(df.class, formula(paste(col, ' ~ Lab_Purpose')), ci = TRUE, conf.level = 0.67, nboot = 100)[, c('.y.', 'effsize', 'conf.low', 'conf.high')])
+}
+  
+df1 <- data.frame(sapply(df.class[df.class$Lab_Purpose == 'Reinforce physics concepts', 2:ncol(df.class)], mean))
+
+df2 <- data.frame(sapply(df.class[df.class$Lab_Purpose == 'Develop lab skills', 2:ncol(df.class)], mean))
+
+df <- df2 - df1
+colnames(df) <- c('diff.in.means')
+df$diff.in.means <- 2 * (df$diff.in.means > 0) - 1
+
+wilcox.summary <- wilcox.summary %>%
+  mutate(Group = str_sub(.y., 1, 3),
+         Element = str_sub(.y., -1, -1),
+         effsize = effsize * df$diff.in.means,
+         conf.low = conf.low * df$diff.in.means,
+         conf.high = conf.high * df$diff.in.means)
+
+wilcox.summary
+
+df.class %>%
+  group_by(Lab_Purpose)
+    
+#   wilcox_effsize(df.class, Q33_3 ~ Lab_Purpose, ci = TRUE, conf.level = 0.67, nboot = 100)
+# 
+# wilcox_effsize(df.class, Q33_3 ~ Lab_Purpose, ci = TRUE, conf.level = 0.67, nboot = 100)[, c('effsize', 'conf.low', 'conf.high')]
+# levels(df.class$Lab_Purpose)
+# y$conf.int
+# 
+# wilcox.summary <- data.frame(sapply(df.class[, 2:ncol(df.class)], function(x)  wilcox.test(x[df.class$Lab_Purpose == 'Reinforce physics concepts'], x[df.class$Lab_Purpose == 'Develop lab skills'], correct = FALSE, conf.int = TRUE))) %>%
+#   mutate(Question = str_sub(rownames(.), 1, 5))
+# 
+# rownames(wilcox.summary) <- c()
+# colnames(wilcox.summary) <- c('Median.difference', 'Question')
+# wilcox.summary
+
+wilcox.summary
+
+ggplot(wilcox.summary, aes(x = .y., y = effsize, shape = Group, color = Group)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size = 1) +
+  coord_flip() +
+  theme(axis.line.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        legend.position = 'top') +
+  geom_hline(yintercept = 0, size = 1, linetype = 'dashed') +
+  geom_text(aes(label = .y., y = conf.high), wilcox.summary[wilcox.summary$effsize > 0,], hjust = -0.25) +
+  geom_text(aes(label = .y., y = conf.high), wilcox.summary[wilcox.summary$effsize < 0,], hjust = 1.25) +
+  ylim(-1.1, 1.1) +
+  scale_color_manual(values = c('#e69f00', '#56b3e9', '#009e74', '#0071b2', '#cc79a7')) +
+  ylab('Wilcoxon effect size (r)')
 ```
 
-**FR Analysis**
 ```{r}
-df.FR <- df.Student %>%
-  filter(Survey == 'F') %>%
-  filter(TotalScores != 0)
-
-hist(df.FR$TotalScores, breaks = 10)
-
-t.test(df.FR$TotalScores ~ df.FR$Gender)
-t.test(df.FR$TotalScores ~ df.FR$URM_Status)
-
-cohen.d(df.FR$TotalScores ~ df.FR$Gender)
-cohen.d(df.FR$TotalScores ~ df.FR$URM_Status)
+corrgram(df.class[, 2:ncol(df.class)], cor.method = 'spearman')
 ```
+
+**Impute missing data**
+```{r}
+df.imp <- Create.Class.Variables(df.complete) %>%
+  select(Class_ID, School, Gender, URM_Status, Major, Lab_Level, Lab_Purpose, PreScores.cmc, PreScores.cwc, PostScores) %>%
+  mutate(Class_ID = as.factor(Class_ID),
+         School = as.factor(School))
+df.imp
+
+levels(df.imp$Class_ID) <- 1:length(levels(df.imp$Class_ID))
+df.imp$Class_ID <- as.numeric(df.imp$Class_ID)
+
+levels(df.imp$School) <- 1:length(levels(df.imp$School))
+df.imp$School <- as.numeric(df.imp$School)
+
+Frac.Missing <- round(sum(is.na(df.imp$PreScores.cwc) |
+                            is.na(df.imp$PostScores))/nrow(df.imp) * 100)
+print(Frac.Missing)
+# library(miceadds)
+ini <- mice(df.imp, maxit = 0)
+predM <- ini$predictorMatrix
+iniM <- ini$method
+# predM[, 'Class_ID'] <- -2
+predM[, 'School'] <- -2
+print(predM)
+iniM <- c('', '', '', '', '', '', '', '', '2l.pmm', '2l.pmm')
+
+set.seed(11)
+imp.dat <- mice(df.imp, m = Frac.Missing, pred = predM, met = iniM, print = FALSE)
+
+fit <- with(imp.dat, lme4::lmer(PostScores ~ PreScores.cwc + PreScores.cmc + (Gender + URM_Status) * Lab_Purpose + Major + Lab_Level + (1 | School/Class_ID)))
+print(summary(pool(fit)))
+```
+
