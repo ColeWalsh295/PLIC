@@ -1,0 +1,158 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+# Load necessary packages
+```{r, results = 'hide', message = FALSE, warning = FALSE}
+library(tidyverse)
+library(data.table)
+library(lavaan)
+library(semPlot)
+```
+
+# MBT scoring function
+```{r}
+questions.vec <- paste('Q', rep(1:26), sep = '')
+answers <- c(2, 4, 5, 3, 1, 3, 3, 4, 1, 5, 5, 3, 2, 2, 5, 1, 4, 2, 3, 3, 1, 2, 4, 1, 1, 5)
+
+df.answers <- data.frame(t(data.frame(answers = answers)))
+names(df.answers) <- questions.vec
+
+Read.Score.MBT <- function(file, skip.vec = c(1)){
+  dt <- fread(file, header = TRUE)[-skip.vec,]
+  
+  score.mat <- sweep(dt[, ..questions.vec], 2, 
+                     as.numeric(as.character(unlist(df.answers))), "==")
+  
+  df <- cbind(dt, 'score' = rowSums(score.mat))
+  return(df)
+}
+```
+
+# Read MBT files
+```{r}
+df.MBT.P1112.F2019pre <- Read.Score.MBT('C:/Users/Cole/Documents/MBT_DATA/Physics_1112_Pre_Test_Fall_2019.csv', 
+                                        skip.vec = c(1, 2)) %>%
+  filter((Finished == 1) & (Q82 == 1)) %>% # only keep students that finished and consented
+  select(QA, QB, QC, QD, score) %>%
+  `colnames<-`(c('last.name', 'first.name', 'net.id', 'student.id', 'MBT.score'))
+
+df.MBT.P1112.F2019post <- Read.Score.MBT('C:/Users/Cole/Documents/MBT_DATA/Physics_1112_Post_Test_Fall_2019.csv', 
+                                     skip.vec = c(1, 2)) %>%
+  filter((Finished == 1) & (Q82 == 1)) %>% # only keep students that finished and consented
+  select(QA, QB, QC, QD, score) %>%
+  `colnames<-`(c('last.name', 'first.name', 'net.id', 'student.id', 'MBT.score'))
+
+df.MBT.P1112.S2019pre <- Read.Score.MBT('C:/Users/Cole/Documents/MBT_DATA/Physics_1112_Pre_Test_Spring_2019.csv')
+
+df.MBT.P1112.S2019pre <- subset(df.MBT.P1112.S2019pre, 
+                                select = c('V5', 'Q55_1', 'Q49', 'Q51', 
+                                           'Q53', 'Q61', 'score')) %>%
+  filter((V5 == 1) & (Q55_1 == 1)) %>% # only keep students that finished and consented
+  select(Q49, Q51, Q53, Q61, score) %>%
+  `colnames<-`(c('first.name', 'last.name', 'net.id', 'student.id', 'MBT.score'))
+
+
+df.MBT.P1112.S2019post <- Read.Score.MBT('C:/Users/Cole/Documents/MBT_DATA/Physics_1112_Post_Test_Spring_2019.csv')
+
+df.MBT.P1112.S2019post <- subset(df.MBT.P1112.S2019post, 
+                                 select = c('V5', 'Q55_1', 'Q49', 'Q51', 
+                                            'Q53', 'Q61', 'score')) %>%
+  filter((V5 == 1) & (Q55_1 == 1)) %>% # only keep students that finished and consented
+  select(Q49, Q51, Q53, Q61, score) %>%
+  `colnames<-`(c('first.name', 'last.name', 'net.id', 'student.id', 'MBT.score'))
+```
+
+# Read PLIC files
+```{r}
+df.PLIC.pre <- fread('C:/Users/Cole/Documents/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat.csv') %>%
+  filter(!is.na(PreScores)) %>%
+  select(Class_ID, Q5a_x, Q5b_x, Q5c_x, PreScores)
+
+df.PLIC.P1112.F2019pre <- df.PLIC.pre %>%
+  filter(Class_ID == 'R_9EVBSZgwQyP6mWZ') %>%
+  select(-Class_ID) %>%
+  `colnames<-`(c('ID', 'last.name', 'first.name', 'PLIC.score'))
+
+df.PLIC.P1112.S2019pre <- df.PLIC.pre %>%
+  filter(Class_ID == 'R_RKRNIWFu1gZuSPf') %>%
+  select(-Class_ID) %>%
+  `colnames<-`(c('ID', 'last.name', 'first.name', 'PLIC.score'))
+
+df.PLIC.post <- fread('C:/Users/Cole/Documents/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat.csv') %>%
+  filter(!is.na(PostScores)) %>%
+  select(Class_ID, Q5a_y, Q5b_y, Q5c_y, PostScores)
+
+df.PLIC.P1112.F2019post <- df.PLIC.post %>%
+  filter(Class_ID == 'R_9EVBSZgwQyP6mWZ') %>%
+  select(-Class_ID) %>%
+  `colnames<-`(c('ID', 'last.name', 'first.name', 'PLIC.score'))
+
+df.PLIC.P1112.S2019post <- df.PLIC.post %>%
+  filter(Class_ID == 'R_RKRNIWFu1gZuSPf') %>%
+  select(-Class_ID) %>%
+  `colnames<-`(c('ID', 'last.name', 'first.name', 'PLIC.score'))
+```
+
+# Matching MBT and PLIC
+```{r}
+match.MBT.PLIC <- function(MBT.df, PLIC.df){
+  netID.df <- inner_join(MBT.df, PLIC.df, by = c('net.id' = 'ID'))
+  studentID.df <- inner_join(MBT.df, PLIC.df, by = c('student.id' = 'ID'))
+
+match.df <- rbind(netID.df, studentID.df) %>%
+  filter(!duplicated(student.id)) # %>%
+  # select(MBT.score, PLIC.score)
+}
+
+F2019pre.df <- match.MBT.PLIC(df.MBT.P1112.F2019pre, df.PLIC.P1112.F2019pre)
+S2019pre.df <- match.MBT.PLIC(df.MBT.P1112.S2019pre, df.PLIC.P1112.S2019pre)
+
+pre.df <- rbind(F2019pre.df, S2019pre.df)
+
+F2019post.df <- match.MBT.PLIC(df.MBT.P1112.F2019post, df.PLIC.P1112.F2019post)
+S2019post.df <- match.MBT.PLIC(df.MBT.P1112.S2019post, df.PLIC.P1112.S2019post)
+
+post.df <- rbind(F2019post.df, S2019post.df)
+```
+
+# Correlation and visualization (PRE)
+```{r}
+nrow(pre.df)
+
+hist(pre.df$MBT.score)
+hist(pre.df$PLIC.score)
+
+cor(pre.df$MBT.score, pre.df$PLIC.score)
+plot(pre.df$MBT.score, pre.df$PLIC.score)
+```
+
+# Correlation and visualization (POST)
+```{r}
+nrow(post.df)
+
+hist(post.df$MBT.score)
+hist(post.df$PLIC.score)
+
+cor(post.df$MBT.score, post.df$PLIC.score)
+plot(post.df$MBT.score, post.df$PLIC.score)
+```
+
+# SEM analysis
+```{r}
+df <- inner_join(pre.df, post.df, by = 'student.id', suffix = c('.pre', '.post')) %>%
+  filter(!duplicated(student.id)) %>%
+  select(MBT.score.pre, MBT.score.post, PLIC.score.pre, PLIC.score.post)
+
+mod <- '
+  PLIC.score.pre ~ MBT.score.pre
+  MBT.score.post ~ MBT.score.pre + PLIC.score.pre
+  PLIC.score.post ~ PLIC.score.pre + MBT.score.post
+'
+
+fit <- sem(mod, df)
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+semPaths(fit, whatLabels = 'std', edge.color = 'black', edge.label.cex = 1.5, curve = 2, sizeMan = 12, nodeLabels = c('PLIC pre', 'MBT post', 'PLIC post', 'MBT pre'), residuals = FALSE, label.scale = FALSE, mar = c(8, 8, 8, 8))
+```
+
