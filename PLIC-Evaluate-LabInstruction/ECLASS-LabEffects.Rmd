@@ -1,3 +1,8 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
 # Load necessary packages
 ```{r, results = 'hide', message = FALSE, warning = FALSE}
 library(tidyverse)
@@ -184,13 +189,45 @@ plot.pre.post(df.matched, 'Lab.goal')
 
 # Collapse data
 ```{r}
+df.matched <- df.matched %>%
+  mutate(Major = case_when(
+    (Major == 'Physics') | (Major == 'Engineering Physics') | (Major == 'Astronomy') | 
+      (Major == 'Astrophysics') ~ 'Physics',
+    (Major == 'Chemistry') | (Major == 'Engineering') | (Major == 'Geology/geophysics') | 
+      (Major == 'Math/applied math') | (Major == 'Computer science') ~ 'Eng/chem/math/cs/geology',
+    (Major == 'Biochemistry') | (Major == 'Biology') | 
+      (Major == 'Physiology') ~ 'Life science',
+    Major == 'Other science' ~ 'Other science',
+    Major == 'Non-science' ~ 'Non-science',
+    Major == 'Open/undeclared' ~ 'Open/undeclared',
+  TRUE ~ NA_character_
+  ),
+  Race.ethnicity = case_when(
+    (Race.ethnicity == 'American indian or Alaska native') | 
+      (Race.ethnicity == 'Native Hawaiian or Pacific islander') | 
+      (Race.ethnicity == 'Other') ~ 'Other',
+    Race.ethnicity == 'Black or African american' ~ 'Black or African american',
+    Race.ethnicity == 'Hispanic/latinx' ~ 'Hispanic/latinx',
+    Race.ethnicity == 'Asian' ~ 'Asian',
+    Race.ethnicity == 'White' ~ 'White',
+    TRUE ~ NA_character_
+  )) %>%
+  mutate(Major = relevel(as.factor(Major), ref = 'Physics'),
+         Race.ethnicity = relevel(as.factor(Race.ethnicity), ref = 'White'),
+         Gender = relevel(as.factor(Gender), ref = 'Man'),
+         Lab.goal = relevel(Lab.goal, ref = 'Reinforce physics concepts.'))
 
+plot.pre.post(df.matched, 'Major')
+plot.pre.post(df.matched, 'Race.ethnicity')
 ```
 
 
 # Mixed-effects models
 ```{r}
-summary(lmer(student.score.post ~ student.score.pre + Lab.goal + Lab.level + Major + 
+summary(lmer(student.score.post ~ student.score.pre + Lab.goal + Major + 
                Gender + Race.ethnicity + (1 | ResponseId), df.matched))
+
+summary(lmer(student.score.post ~ student.score.pre + Lab.goal * (Gender + Race.ethnicity)
+             + Major + (1 | ResponseId), df.matched))
 ```
 
