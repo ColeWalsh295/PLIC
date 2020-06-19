@@ -10,10 +10,12 @@ library(data.table)
 library(reshape2)
 library(ggpubr)
 library(lmerTest)
+library(sjPlot)
+library(gridExtra)
 library(stargazer)
 library(lavaan)
 library(semPlot)
-theme_set(theme_classic(base_size = 10))
+theme_set(theme_classic(base_size = 14))
 ```
 
 # Scoring/cleaning functions
@@ -59,9 +61,9 @@ Read.duplicate.cis <- function(file){
 
 # Read, score, and match
 ```{r}
-cis.df <- Read.duplicate.cis('C:/Users/Cole/Documents/GRA_Summer2020/eclass-public-master/anon_cis.csv')
+#cis.df <- Read.duplicate.cis('C:/Users/Cole/Documents/GRA_Summer2020/eclass-public-master/anon_cis.csv')
 
-#cis.df <- read.csv('C:/Users/Cole/Documents/GRA_Summer2020/eclass-public-master/anon_cis.csv')
+cis.df <- read.csv('C:/Users/Cole/Documents/GRA_Summer2020/eclass-public-master/anon_cis_CW.csv')
 
 pre.df <- Read.Score('C:/Users/Cole/Documents/GRA_Summer2020/eclass-public-master/anon_pre.csv')
 
@@ -91,15 +93,6 @@ length(unique(df.matched$ResponseId))
 
 # Data processing
 ```{r}
-# Replace declared major with intended major in cases where students intend to switch
-df.matched[is.na(df.matched$Q48) | (df.matched$Q48 == 0), 
-           'Q48'] <- df.matched[is.na(df.matched$Q48) | (df.matched$Q48 == 0), 'Q47']
-
-# When students select multiple race/ethnicity boxes, set to group with minimum membership
-colSums(df.matched[, c('Q52_1', 'Q52_2', 'Q52_3', 'Q52_4', 'Q52_5', 'Q52_6', 'Q52_7')], na.rm = TRUE)
-
-# Ethnicity set priority = Native Hawaiian/pacific islander, American indian/Alaska native, Other race/ethnicity, Black/African american, Hispanic/latinx, Asian, White
-
 df.matched <- df.matched %>%
   mutate(Major = case_when(
     Q48 == 1 ~ 'Physics',
@@ -117,48 +110,55 @@ df.matched <- df.matched %>%
     Q48 == 13 ~ 'Other science',
     Q48 == 14 ~ 'Non-science',
     Q48 == 15 ~ 'Open/undeclared',
-    TRUE ~ NA_character_
+    TRUE ~ 'Unknown'
   ),
   Gender = case_when(
     Q54 == 1 ~ 'Woman',
     Q54 == 2 ~ 'Man',
     Q54 == 3 ~ 'Other',
-    TRUE ~ NA_character_
+    TRUE ~ 'Unknown'
   ),
-  Race.ethnicity = case_when(
-    Q52_5 == 1 ~ 'Native Hawaiian or Pacific islander',
-    Q52_1 == 1 ~ 'American indian or Alaska native',
-    Q52_7 == 1 ~ 'Other',
-    Q52_3 == 1 ~ 'Black or African american',
-    Q52_4 == 1 ~ 'Hispanic/latinx',
-    Q52_2 == 1 ~ 'Asian',
-    Q52_6 == 1 ~ 'White',
+  Lab.goal = case_when(
+    Q33 == 'Reinforce physics concepts.' ~ 'Concepts',
+    Q33 == 'Both about equally.' ~ 'Both',
+    Q33 == 'Develop lab skills.' ~ 'Skills',
     TRUE ~ NA_character_
-  ),
-  Lab.goal = Q33,
-  Lab.level = case_when(
-    Q18 == 'Beyond the first year lab' ~ 'BFY',
-    Q27 == 'Calculus-based' ~ 'FY.calc',
-    Q27 == 'Algebra-based' ~ 'FY.alg',
+  )) %>%
+  mutate(Major = case_when(
+    (Major == 'Physics') | (Major == 'Engineering Physics') | (Major == 'Astronomy') | 
+      (Major == 'Astrophysics') ~ 'Physics',
+    (Major == 'Chemistry') | (Major == 'Biochemistry') | (Major == 'Biology') | 
+      (Major == 'Physiology') ~ 'Chem.LifeSci',
+    Major == 'Engineering' ~ 'Engineering',
+    (Major == 'Math/applied math') | (Major == 'Computer science') ~ 'Math.CS',
+    (Major == 'Geology/geophysics') | (Major == 'Other science') ~ 'OtherSci',
+    Major == 'Non-science' ~ 'NonSci',
+    Major == 'Open/undeclared' ~ 'Undeclared',
+    Major == 'Unknown' ~ 'Unknown',
     TRUE ~ NA_character_
-  ))
+  )) %>%
+  mutate(Major = relevel(as.factor(Major), ref = 'Physics'),
+         Gender = relevel(as.factor(Gender), ref = 'Man'),
+         Lab.goal = relevel(as.factor(Lab.goal), ref = 'Concepts'))
+
+df.matched$Race.ethnicity.Native = relevel(factor(ifelse((df.matched$Q52_5 == 1) | 
+                                                      (df.matched$Q52_1 == 1), 1, 0),
+                                                  levels = c(1, 0)), ref = '0')
+new.race.cols <- c('Race.ethnicity.Other', 'Race.ethnicity.Black', 
+                 'Race.ethnicity.Hispanic', 'Race.ethnicity.Asian', 
+                 'Race.ethnicity.White', 'Race.ethnicity.Unknown')
+setnames(df.matched, old = c('Q52_7', 'Q52_3', 'Q52_4', 'Q52_2', 'Q52_6', 
+                             'race_unknown'), new = new.race.cols)
+df.matched[is.na(df.matched)] <- 0
+df.matched[new.race.cols] <- lapply(df.matched[new.race.cols], factor, levels = c(1, 0))
+df.matched[new.race.cols] <- lapply(df.matched[new.race.cols], relevel, ref = '0')
 ```
 
 # Data filtering
 ```{r}
 # Remove whole classes without goal and/or level information
 df.matched <- df.matched %>%
-  filter(!is.na(Lab.goal) & !is.na(Lab.level))
-
-print('# of remaining students in matched dataset...')
-nrow(df.matched)
-
-print('# of remaining classes in matched dataset...')
-length(unique(df.matched$ResponseId))
-
-# Remove students without full race/ethnicity, gender, and major information
-df.matched <- df.matched %>%
-  filter(!is.na(Major) & !is.na(Gender) & !is.na(Race.ethnicity))
+  filter(Lab.goal != '')
 
 print('# of remaining students in matched dataset...')
 nrow(df.matched)
@@ -183,51 +183,79 @@ plot.pre.post <- function(df, var){
 
 plot.pre.post(df.matched, 'Major')
 plot.pre.post(df.matched, 'Gender')
-plot.pre.post(df.matched, 'Race.ethnicity')
+#plot.pre.post(df.matched, 'Race.ethnicity')
 plot.pre.post(df.matched, 'Lab.goal')
 ```
 
-# Collapse data
-```{r}
-df.matched <- df.matched %>%
-  mutate(Major = case_when(
-    (Major == 'Physics') | (Major == 'Engineering Physics') | (Major == 'Astronomy') | 
-      (Major == 'Astrophysics') ~ 'Physics',
-    (Major == 'Chemistry') | (Major == 'Engineering') | (Major == 'Geology/geophysics') | 
-      (Major == 'Math/applied math') | (Major == 'Computer science') ~ 'Eng/chem/math/cs/geology',
-    (Major == 'Biochemistry') | (Major == 'Biology') | 
-      (Major == 'Physiology') ~ 'Life science',
-    Major == 'Other science' ~ 'Other science',
-    Major == 'Non-science' ~ 'Non-science',
-    Major == 'Open/undeclared' ~ 'Open/undeclared',
-  TRUE ~ NA_character_
-  ),
-  Race.ethnicity = case_when(
-    (Race.ethnicity == 'American indian or Alaska native') | 
-      (Race.ethnicity == 'Native Hawaiian or Pacific islander') | 
-      (Race.ethnicity == 'Other') ~ 'Other',
-    Race.ethnicity == 'Black or African american' ~ 'Black or African american',
-    Race.ethnicity == 'Hispanic/latinx' ~ 'Hispanic/latinx',
-    Race.ethnicity == 'Asian' ~ 'Asian',
-    Race.ethnicity == 'White' ~ 'White',
-    TRUE ~ NA_character_
-  )) %>%
-  mutate(Major = relevel(as.factor(Major), ref = 'Physics'),
-         Race.ethnicity = relevel(as.factor(Race.ethnicity), ref = 'White'),
-         Gender = relevel(as.factor(Gender), ref = 'Man'),
-         Lab.goal = relevel(Lab.goal, ref = 'Reinforce physics concepts.'))
-
-plot.pre.post(df.matched, 'Major')
-plot.pre.post(df.matched, 'Race.ethnicity')
-```
-
-
 # Mixed-effects models
 ```{r}
-summary(lmer(student.score.post ~ student.score.pre + Lab.goal + Major + 
-               Gender + Race.ethnicity + (1 | ResponseId), df.matched))
+mod1 <- lmer(student.score.post ~ student.score.pre + Lab.goal + Major + 
+               Gender + Race.ethnicity.Native + Race.ethnicity.Other +
+               Race.ethnicity.Black + Race.ethnicity.Hispanic + Race.ethnicity.Asian + 
+               Race.ethnicity.White + Race.ethnicity.Unknown + (1 | ResponseId), 
+             df.matched)
+summary(mod1)
 
-summary(lmer(student.score.post ~ student.score.pre + Lab.goal * (Gender + Race.ethnicity)
-             + Major + (1 | ResponseId), df.matched))
+mod2 <- lmer(student.score.post ~ student.score.pre + Lab.goal * 
+               (Gender + Race.ethnicity.Native + Race.ethnicity.Other + 
+                  Race.ethnicity.Black + Race.ethnicity.Hispanic + Race.ethnicity.Asian + 
+                  Race.ethnicity.White + Race.ethnicity.Unknown) + Major + 
+               (1 | ResponseId), df.matched)
+summary(mod2)
+```
+
+# Marginal effects plots
+```{r}
+# Main effect of lab goal from Model 1
+p1 <- plot_model(mod1, type = 'eff', terms = 'Lab.goal', dot.size = 4, line.size = 1, 
+                 ci.lvl = 0.67, title = '', 
+                 axis.title = 'Predicted E-CLASS posttest scores', 
+                 colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
+  theme(legend.position = 'right') +
+  scale_x_discrete(limits = c("Reinforce concepts", "Both about equally", 
+                              "Develop skills"))
+
+p1.new <- p1
+p1.new$data$x <- c(1, 2, 3)
+p1.new
+
+# Effects of gender across lab goal from Model 2
+
+p2 <- plot_model(mod2, type = 'eff', terms = c('Gender', 'Lab.goal'), dot.size = 4, 
+                 line.size = 1, ci.lvl = 0.67, title = '', 
+                 axis.title = 'Predicted E-CLASS posttest scores', 
+                 colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
+  theme(legend.position = 'right')
+
+p2.new <- p2
+p2.new$data$group <- factor(p2.new$data$group, levels = c("Concepts", "Both", "Skills"))
+p2.new
+```
+
+# Race/ethnicity marginal effects plots
+```{r}
+p3.native <- plot_model(mod2, type = 'eff', terms = c('Race.ethnicity.Native [1]', 
+                                                      'Lab.goal'))
+df.race.eff <- data.frame(p3.native$data) %>%
+  mutate(race.ethnicity = 'Race.ethnicity.Native')
+for(race in c(new.race.cols)){
+  p3 <- plot_model(mod2, type = 'eff', terms = c(paste(race, ' [1]', sep = ''),
+                                                 'Lab.goal'))
+  df.race.eff <- rbind(df.race.eff, data.frame(p3$data) %>%
+                         mutate(race.ethnicity = race))
+}
+
+df.race.eff <- df.race.eff %>%
+  mutate(group = factor(group, levels = c('Concepts', 'Both', 'Skills'), 
+                        ordered = TRUE)) %>%
+  rowwise() %>%
+  mutate(race.ethnicity = strsplit(race.ethnicity, '\\.')[[1]][3])
+
+ggplot(df.race.eff, aes(x = race.ethnicity, y = predicted, group = group, color = group)) +
+  geom_point(size = 4, position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size = 1, width = 0.2,
+                position = position_dodge(width = 0.5)) +
+  scale_color_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
+  labs(x = 'Race/ethnicity', y = 'Predicted E-CLASS posttest scores', color = 'Lab goal')
 ```
 
