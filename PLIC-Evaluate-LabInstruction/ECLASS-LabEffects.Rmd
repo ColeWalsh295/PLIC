@@ -10,6 +10,7 @@ library(data.table)
 library(reshape2)
 library(ggpubr)
 library(lmerTest)
+library(reghelper)
 library(sjstats)
 library(sjPlot)
 library(gridExtra)
@@ -75,7 +76,19 @@ post.df <- Read.Score('C:/Users/Cole/Documents/GRA_Summer2020/eclass-public-anal
 
 full.df <- full_join(cis.pre.df, post.df, 
                      by = c('post_survey_id' = 'survey_id', 
-                            'anon_student_id'), suffix = c('.pre', '.post'))
+                            'anon_student_id'), suffix = c('.pre', '.post')) %>%
+    mutate(Lab.goal = case_when(
+      Q33 == 'Reinforce physics concepts.' ~ 'Concepts',
+      Q33 == 'Both about equally.' ~ 'Both',
+      Q33 == 'Develop lab skills.' ~ 'Skills',
+      TRUE ~ NA_character_
+    ), 
+    Lab.level = case_when(
+      Q18 == 'Beyond the first year lab' ~ 'BFY',
+      Q27 == 'Calculus-based' ~ 'FY.Calc',
+      Q27 == 'Algebra-based' ~ 'FY.Alg',
+      TRUE ~ NA_character_
+    ))
 
 print('Total # of students in dataset...')
 nrow(full.df)
@@ -83,15 +96,26 @@ nrow(full.df)
 print('Total # of classes in dataset...')
 length(unique(full.df$ResponseId))
 
+print('Total # of institutions in dataset..')
+length(unique(full.df$anon_university_id))
+
 # Remove whole classes without goal and/or level information
+full.df <- data.table(full.df)[, `:=`(N.students = .N, 
+                                      pre.rate = sum(!is.na(student.score.pre))/.N,
+                                      post.rate = sum(!is.na(student.score.post))/.N), 
+                               .(ResponseId)]
+
 full.df <- full.df %>%
-  filter(Q33 != '')
+  filter(!is.na(Lab.goal) & !is.na(Lab.level) & (pre.rate > 0) & (post.rate > 0))
 
 print('# of remaining students in full dataset...')
 nrow(full.df)
 
 print('# of remaining classes in full dataset...')
 length(unique(full.df$ResponseId))
+
+print('Total # of institutions in dataset..')
+length(unique(full.df$anon_university_id))
 
 df.matched <- full.df %>%
   filter(!is.na(student.score.pre) & !is.na(student.score.post))
@@ -101,6 +125,15 @@ nrow(df.matched)
 
 print('# of classes in matched dataset...')
 length(unique(df.matched$ResponseId))
+
+print('Total # of institutions in dataset..')
+length(unique(df.matched$anon_university_id))
+
+table(df.matched[!duplicated(df.matched$anon_university_id),]$Q15, exclude = NULL)
+table(df.matched[!duplicated(df.matched$ResponseId),]$Lab.level, exclude = NULL)
+table(df.matched[!duplicated(df.matched$ResponseId),]$Lab.goal, exclude = NULL)
+
+colSums(df.matched[, c('Q52_1', 'Q52_5')], na.rm = TRUE)
 ```
 
 # Data processing
@@ -133,18 +166,6 @@ df.matched <- df.matched %>%
     Q54 == 2 ~ 'Man',
     Q54 == 3 ~ 'Other',
     TRUE ~ 'Unknown'
-  ),
-  Lab.goal = case_when(
-    Q33 == 'Reinforce physics concepts.' ~ 'Concepts',
-    Q33 == 'Both about equally.' ~ 'Both',
-    Q33 == 'Develop lab skills.' ~ 'Skills',
-    TRUE ~ NA_character_
-  ),
-  Lab.level = case_when(
-    Q18 == 'Beyond the first year lab' ~ 'BFY',
-    Q27 == 'Calculus-based' ~ 'FY.Calc',
-    Q27 == 'Algebra-based' ~ 'FY.Alg',
-    TRUE ~ NA_character_
   )) %>%
   mutate(Major = case_when(
     (Major == 'Physics') | (Major == 'Engineering Physics') | (Major == 'Astronomy') | 
@@ -175,6 +196,36 @@ setnames(df.matched, old = c('Q52_7', 'Q52_3', 'Q52_4', 'Q52_2', 'Q52_6',
 df.matched[is.na(df.matched)] <- 0
 df.matched[new.race.cols] <- lapply(df.matched[new.race.cols], factor, levels = c(1, 0))
 df.matched[new.race.cols] <- lapply(df.matched[new.race.cols], relevel, ref = '0')
+```
+
+# Demographic breakdowns
+```{r}
+Race.ethnicity.cols <- names(df.matched)[names(df.matched) %like% 'Race']
+Race.ethnicity.table <- function(df, Lab.Purpose = FALSE){
+  if(Lab.Purpose){
+    for(col in Race.ethnicity.cols){
+      print(col)
+      print(table(df[, col], df$Lab.goal))
+    }
+  } else {
+    for(col in Race.ethnicity.cols){
+      print(col)
+      print(table(df[, col]))
+    }
+  }
+}
+
+table(df.matched$Gender)
+Race.ethnicity.table(df.matched)
+table(df.matched$Major)
+table(df.matched$Lab.goal)
+table(df.matched$Gender, df.matched$Lab.goal)
+Race.ethnicity.table(df.matched, Lab.Purpose = TRUE)
+table(df.matched$Major, df.matched$Lab.goal)
+
+chisq.test(df.matched[!duplicated(df.matched$ResponseId), 'Lab.goal'], 
+           df.matched[!duplicated(df.matched$ResponseId), 'Lab.level'])
+summary(aov(student.score.pre ~ Lab.goal, df.matched))
 ```
 
 # Descriptive statistics
@@ -216,6 +267,9 @@ plot.pre.post(df.matched, 'Lab.goal')
 
 # Mixed-effects models
 ```{r}
+mod0 <- lmer(student.score.post ~ (1 | ResponseId), df.matched)
+r2(mod0)
+
 mod1 <- lmer(student.score.post ~ student.score.pre + Lab.goal + Lab.level + Major + 
                Gender + Race.ethnicity.Native + Race.ethnicity.Other +
                Race.ethnicity.Black + Race.ethnicity.Hispanic + Race.ethnicity.Asian + 
@@ -232,6 +286,13 @@ summary(mod2)
 
 r2(mod1)
 r2(mod2)
+
+noStandard.cols <- c('Lab.goal', 'Lab.level', 'Major', 'Gender', 
+                     names(df.matched)[names(df.matched) %like% "Race"])
+class(mod1) <- "lmerMod"
+class(mod2) <- "lmerMod"
+beta(mod1, skip = noStandard.cols)
+beta(mod2, skip = noStandard.cols)
 ```
 
 # Marginal effects plots
@@ -300,7 +361,8 @@ mod <- '
 
 fit <- sem(mod, unique(df.matched[, names(df.matched) %like% "Q35|Q36"]))
 summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
-semPaths(fit, whatLabels = 'std', edge.color = 'black', curve = 2, residuals = FALSE, label.scale = TRUE, mar = c(8, 8, 8, 8))
+semPaths(fit, whatLabels = 'std', edge.color = 'black', curve = 2, residuals = FALSE, 
+         label.scale = TRUE, mar = c(8, 8, 8, 8))
 ```
 
 # With numeric data
@@ -329,7 +391,8 @@ mod <- '
 
 fit <- sem(mod, unique(df.matched[, names(df.matched) %like% "Q35|Q36"]))
 summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
-semPaths(fit, whatLabels = 'std', edge.color = 'black', curve = 2, residuals = FALSE, label.scale = TRUE, mar = c(8, 8, 8, 8))
+semPaths(fit, whatLabels = 'std', edge.color = 'black', curve = 2, residuals = FALSE, 
+         label.scale = TRUE, mar = c(8, 8, 8, 8))
 ```
 *This seems like a good model to move forward with. We drop two items from the modeling factor. For the record, I'm okay with adding them back in, but they will increase our variance maybe more than we can afford.*
 
@@ -356,4 +419,5 @@ mod.sem <- '
 fit <- sem(mod.sem, data = df.matched, cluster = "ResponseId")
 summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
 ```
+
 

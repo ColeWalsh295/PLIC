@@ -131,20 +131,23 @@ Desc.stats(df.Centered, 'Lab_Purpose')
 
 **LMER**
 ```{r}
-mod.null <- lmer(PostScores ~ (1 | School/Class_ID), df.Centered)
+mod.null <- lmer(Gain ~ (1 | School/Class_ID), df.Centered)
 summary(mod.null)
 r.squaredGLMM(mod.null)
 
-mod.main <- lmer(PostScores ~ PreScores.cwc + PreScores.cmc + Gender + URM_Status + Major + Lab_Purpose + Lab_Level + (1 | School/Class_ID), df.Centered)
+mod.main <- lmer(Gain ~ PreScores + Gender + URM_Status + Major + Lab_Purpose + (1 | School/Class_ID), df.Centered)
 summary(mod.main)
 r.squaredGLMM(mod.main)
 
-mod.interaction <- lmer(PostScores ~ PreScores.cwc + PreScores.cmc + (Gender + URM_Status) * Lab_Purpose + Major + Lab_Level + (1 | School/Class_ID), df.Centered)
+mod.interaction <- lmer(Gain ~ PreScores + (Gender + URM_Status) * Lab_Purpose + Major + (1 | School/Class_ID), df.Centered)
 summary(mod.interaction)
 r.squaredGLMM(mod.interaction)
 
+#library(reghelper)
+
 class(mod.null) <- "lmerMod"
 class(mod.main) <- "lmerMod"
+beta(mod.main, skip = c('Gender', 'URM_Status', 'Major', 'Lab_Purpose'))
 class(mod.interaction) <- "lmerMod"
 stargazer(mod.null, mod.main, mod.interaction, star.cutoffs = c(0.05, 0.01, 0.001), intercept.bottom = FALSE, out = 'Results.tex', intercept.top = TRUE, omit.stat = 'all')
 
@@ -154,12 +157,25 @@ qqmath(mod.interaction)
 
 **Coefs plot**
 ```{r}
-set_theme(base = theme_classic(base_size = 12))
+set_theme(base = theme_classic(base_size = 10))
 
-# p1 <- plot_model(mod.interaction, type = 'eff', terms = c('Gender [Men, Women]', 'Lab_Purpose'), dot.size = 4, line.size = 1, ci.lvl = 0.67, title = '', axis.title = 'Predicted posttest scores', colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
-#   theme(legend.position = 'right')
+p1 <- plot_model(mod.main, type = 'eff', terms = 'Lab_Purpose', dot.size = 4, line.size = 1, ci.lvl = 0.67, title = '', axis.title = 'Predicted gain in PLIC scores', colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
+  theme(legend.position = 'right')  +
+  scale_x_discrete(limits = c("Reinforce concepts", "Both about equally", "Develop skills"))
 
-p1 <- plot_model(mod.interaction, type = 'eff', terms = c('URM_Status', 'Lab_Purpose'), dot.size = 4, line.size = 1, ci.lvl = 0.67, title = '', axis.title = 'Predicted posttest scores', colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
+p2 <- p1
+p2$data$x <- c(1, 2, 3)
+p2
+# ggplot(p2$data, aes(x = x, y = predicted)) +
+#   geom_point(size = 4) +
+#   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size = 1, width = 0.2) +
+#   labs(x = 'Lab Purpose', y = 'Predicted gain in PLIC score') +
+#   scale_x_discrete(limits = c("Reinforce physics concepts", "Both about equally", "Develop lab skills"))
+
+#p1 <- plot_model(mod.interaction, type = 'eff', terms = c('Gender [Men, Women]', 'Lab_Purpose'), dot.size = 4, line.size = 1, ci.lvl = 0.67, title = '', axis.title = 'Predicted gain in PLIC scores', colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
+#  theme(legend.position = 'right')
+
+p1 <- plot_model(mod.interaction, type = 'eff', terms = c('URM_Status', 'Lab_Purpose'), dot.size = 4, line.size = 1, ci.lvl = 0.67, title = '', axis.title = 'Predicted gain in PLIC scores', colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
   theme(legend.position = 'right')
 
 p2 <- p1
@@ -196,7 +212,8 @@ mod.ext <- '
   agency ~~ 0.509 * modeling 
 
   # intercepts
-  Q29_1 ~ 0; Q29_2 ~ 0; Q29_3 ~ 0; Q29_4 ~ 0; Q29_5 ~ 0; Q31_6 ~ 0; Q31_2 ~ 0; Q31_1 ~ 0; Q31_4 ~ 0; Q31_3 ~ 0; Q31_5 ~ 0; agency ~ 0; modeling ~ 0
+  Q29_1 ~ 0; Q29_2 ~ 0; Q29_3 ~ 0; Q29_4 ~ 0; Q29_5 ~ 0; agency ~ 0
+  Q31_6 ~ 0; Q31_2 ~ 0; Q31_1 ~ 0; Q31_4 ~ 0; Q31_3 ~ 0; Q31_5 ~ 0; modeling ~ 0
 
   # thresholds
   Q29_1 | -0.731 * t1 + 0.188 * t2 + 1.079 * t3 #+ 1.938 * t4
@@ -242,21 +259,106 @@ mod.ext <- '
   Q31_5 ~*~ 1 * Q31_5
 '
 
+df.Centered[, names(df.Centered) %like% "Q28|Q29|Q31"] <- data.frame(lapply(df.Centered[, names(df.Centered) %like% "Q28|Q29|Q31"], function(x) factor(as.vector(x), levels = c('1', '2', '3', '4', '5'), ordered = TRUE)))
+
 fit <- cfa(mod.ext, data = df.labs, do.fit = FALSE)
 
 df.CFA <- cbind(df.labs, lavPredict(fit))
 df.SEM <- left_join(df.Centered, df.CFA, by = 'Class_ID')
 
-cor(df.SEM[!duplicated(df.SEM$Class_ID), c('agency', 'modeling', 'PurposeSkills', 'PurposeBoth', 'LevelCalc')])
+cor(df.SEM[!duplicated(df.SEM$Class_ID), c('agency', 'PurposeSkills', 'PurposeBoth')])
 
 mod.SEM <- '
-  PostScores ~ PreScores + GenW + GenNon + URM_StatusURM + MajorEng + MajorPhys + PurposeSkills + PurposeBoth + LevelCalc + agency + modeling
-  agency ~ PurposeSkills + PurposeBoth + LevelCalc
-  modeling ~ PurposeSkills + PurposeBoth + LevelCalc
+  Gain ~ GenW + URM_StatusURM + MajorEng + MajorPhys + PurposeSkills + PurposeBoth + agency
+  agency ~ PurposeSkills + PurposeBoth
+  modeling ~ PurposeSkills + PurposeBoth
 '
-sd(df.CFA$modeling)
+
+#df.Centered[, names(df.Centered) %like% "Q28|Q29|Q31"] <- data.frame(lapply(df.Centered[, names(df.Centered) %like% "Q28|Q29|Q31"], function(x) factor(as.vector(x), levels = c('1', '2', '3', '4', '5'), ordered = TRUE)))
 
 fit <- sem(mod.SEM, df.SEM)
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+semPaths(fit, whatLabels = 'est')
+```
+
+
+```{r}
+mod.SEM <- '
+  # latent variables
+  agency =~ 0.800 * Q29_1 + 0.897 * Q29_2 + 0.768 * Q29_3 + 0.800 * Q29_4 + 0.683 * Q29_5 + 0.720 * Q31_6
+  # modeling =~ 0.781 * Q31_2 + 0.842 * Q31_1 + 0.791 * Q31_4 + 0.859 * Q31_3 + 0.563 * Q31_5
+
+  # covariances
+  # agency ~~ 0.509 * modeling 
+
+  # intercepts
+  Q29_1 ~ 0; Q29_2 ~ 0; Q29_3 ~ 0; Q29_4 ~ 0; Q29_5 ~ 0; agency ~ 0
+  # Q31_6 ~ 0; Q31_2 ~ 0; Q31_1 ~ 0; Q31_4 ~ 0; Q31_3 ~ 0; Q31_5 ~ 0; modeling ~ 0
+
+  # thresholds
+  Q29_1 | -0.731 * t1 + 0.188 * t2 + 1.079 * t3 #+ 1.938 * t4
+  Q29_2 | -1.003 * t1 + -0.443 * t2 + 0.395 * t3 + 1.355 * t4
+  Q29_3 | -0.581 * t1 + 0.022 * t2 + 0.899 * t3 + 1.708 * t4
+  Q29_4 | -1.161 * t1 + -0.581 * t2 + 0.324 * t3 #+ 1.543 * t4
+  # Q29_5 | -1.871 * t1 + -1.003 * t2 + -0.044 * t3 + 0.950 * t4
+  Q29_5 |-1.003 * t1 + -0.044 * t2 + 0.950 * t3
+  # Q31_6 | -1.383 * t1 + -0.542 * t2 + 0.431 * t3 + 1.328 * t4
+  # Q31_2 | -1.871 * t1 + -0.835 * t2 + 0.199 * t3 #+ 1.508 * t4
+  # Q31_1 | -1.708 * t1 + -0.702 * t2 + 0.395 * t3 #+ 1.474 * t4
+  # Q31_4 | -1.205 * t1 + -0.278 * t2 + 0.805 * t3 #+ 2.015 * t4
+  # Q31_3 | -1.099 * t1 + 0.011 * t2 + 1.059 * t3 #+ 2.107 * t4
+  # Q31_5 | -1.871 * t1 + -1.079 * t2 + -0.077 * t3 + 1.205 * t4
+  # Q31_5 | -1.079 * t1 + -0.077 * t2 + 1.205 * t3
+
+  # variances
+  Q29_1 ~~ 0.360 * Q29_1
+  Q29_2 ~~ 0.196 * Q29_2
+  Q29_3 ~~ 0.410 * Q29_3
+  Q29_4 ~~ 0.360 * Q29_4
+  Q29_5 ~~ 0.533 * Q29_5
+  # Q31_6 ~~ 0.482 * Q31_6
+  # Q31_2 ~~ 0.389 * Q31_2
+  # Q31_1 ~~ 0.291 * Q31_1
+  # Q31_4 ~~ 0.375 * Q31_4
+  # Q31_3 ~~ 0.262 * Q31_3
+  # Q31_5 ~~ 0.683 * Q31_5
+  agency ~~ 1 * agency
+  # modeling ~~ 1 * modeling
+
+  # scaling factors
+  Q29_1 ~*~ 1 * Q29_1
+  Q29_2 ~*~ 1 * Q29_2
+  Q29_3 ~*~ 1 * Q29_3
+  Q29_4 ~*~ 1 * Q29_4
+  Q29_5 ~*~ 1 * Q29_5
+  # Q31_6 ~*~ 1 * Q31_6
+  # Q31_2 ~*~ 1 * Q31_2
+  # Q31_1 ~*~ 1 * Q31_1
+  # Q31_4 ~*~ 1 * Q31_4
+  # Q31_3 ~*~ 1 * Q31_3
+  # Q31_5 ~*~ 1 * Q31_5
+
+  PostScores ~ PreScores + GenW + GenNon + URM_StatusURM + MajorEng + MajorPhys + PurposeSkills + PurposeBoth + agency 
+  agency ~ PurposeSkills + PurposeBoth
+  # modeling ~ PurposeSkills + PurposeBoth
+'
+
+# df.Centered[, names(df.Centered) %like% "Q28|Q29|Q31"] <- data.frame(lapply(df.Centered[, names(df.Centered) %like% "Q28|Q29|Q31"], function(x) as.numeric(as.vector(x))))
+
+df.Centered[, names(df.Centered) %like% "Q28|Q29|Q31"] <- data.frame(lapply(df.Centered[, names(df.Centered) %like% "Q28|Q29|Q31"], function(x) factor(as.vector(x), levels = c('1', '2', '3', '4', '5'), ordered = TRUE)))
+
+mod.SEM2 <- '
+  # latent variables
+  #agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q31_6
+
+  Gain ~ PreScores + GenW + URM_StatusURM + MajorEng + MajorPhys + PurposeSkills + PurposeBoth
+  # agency ~ PurposeSkills + PurposeBoth
+  # modeling ~ PurposeSkills + PurposeBoth
+'
+
+#df.Centered[, names(df.Centered) %like% "Q28|Q29|Q31"] <- data.frame(lapply(df.Centered[, names(df.Centered) %like% "Q28|Q29|Q31"], function(x) factor(as.vector(x), levels = c('1', '2', '3', '4', '5'), ordered = TRUE)))
+
+fit <- sem(mod.SEM2, df.Centered)
 summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
 semPaths(fit, whatLabels = 'est')
 ```

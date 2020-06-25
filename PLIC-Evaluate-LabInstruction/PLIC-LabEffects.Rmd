@@ -1,0 +1,347 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+# Load necessary packages
+```{r, results = 'hide', message = FALSE, warning = FALSE}
+library(tidyverse)
+library(data.table)
+library(reshape2)
+library(ggpubr)
+library(lmerTest)
+library(reghelper)
+library(sjstats)
+library(sjPlot)
+library(gridExtra)
+library(stargazer)
+library(lavaan)
+library(semPlot)
+library(psych)
+theme_set(theme_classic(base_size = 14))
+source('C:/Users/Cole/Documents/GitHub/PLIC/Process-Merge-Concat/PLIC_DataProcessing.R')
+```
+
+# Read and match
+```{r}
+full.df <- fread('C:/Users/Cole/Documents/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat.csv') %>%
+  Merge.CIS(., Matched = TRUE) %>%
+  filter(Survey_x == 'C' | Survey_y == 'C') %>%
+  mutate(Lab_Level = case_when(
+    Lab_Level == 'Intro-Algebra' ~ 'FY.Alg',
+    Lab_Level == 'Intro-Calculus' ~ 'FY.Calc',
+    (Lab_Level == 'Sophomore') | (Lab_Level == 'Junior') | (Lab_Level == 'Senior') ~ 'BFY',
+    TRUE ~ NA_character_
+  ),
+  Lab_Purpose = case_when(
+    Lab_Purpose == 'Both about equally' ~ 'Both',
+    Lab_Purpose == 'Develop lab skills' ~ 'Skills',
+    Lab_Purpose == 'Reinforce physics concepts' ~ 'Concepts',
+    TRUE ~ NA_character_
+  ))
+
+print('Total # of students in dataset...')
+nrow(full.df)
+
+print('Total # of classes in dataset...')
+length(unique(full.df$Class_ID))
+
+print('Total # of institutions in dataset..')
+length(unique(full.df$School))
+
+# Remove whole classes without goal and/or level information or that were only administered at pre or post
+full.df <- data.table(full.df)[, `:=`(N.students = .N, pre.rate = sum(Survey_x == 'C')/.N,
+                                      post.rate = sum(Survey_y == 'C')/.N),  .(Class_ID)]
+
+full.df <- full.df %>%
+  filter(!is.na(Lab_Level) & !is.na(Lab_Purpose) & (pre.rate > 0) & (post.rate > 0))
+
+print('# of remaining students in full dataset...')
+nrow(full.df)
+
+print('# of remaining classes in full dataset...')
+length(unique(full.df$Class_ID))
+
+print('Total # of institutions in dataset..')
+length(unique(full.df$School))
+
+df.matched <- full.df %>%
+  filter(!is.na(PreScores) & !is.na(PostScores))
+
+print('# of students in matched dataset...')
+nrow(df.matched)
+
+print('# of classes in matched dataset...')
+length(unique(df.matched$Class_ID))
+
+print('Total # of institutions in dataset..')
+length(unique(df.matched$School))
+
+table(df.matched[!duplicated(df.matched$School),]$Institution_Type, exclude = NULL)
+table(df.matched[!duplicated(df.matched$Class_ID),]$Lab_Level, exclude = NULL)
+table(df.matched[!duplicated(df.matched$Class_ID),]$Lab_Purpose, exclude = NULL)
+
+colSums(df.matched[, c('Q6f_1_y', 'Q6f_3_y', 'Q6f_5_y', 'Q6f_7_y')], na.rm = TRUE)
+```
+
+# Data processing
+```{r}
+df.matched <- df.matched %>%
+  mutate(Major = case_when(
+    (Q6b_y == 1) | (Q6b_y == 2) | (Q6b_y == 3) ~ 'Physics',
+    Q6b.i_y == 1 ~ 'Engineering',
+    (Q6b.i_y == 2) | (Q6b.i_y == 3) ~ 'Other science',
+    Q6b.i_y == 4 ~ 'Other',
+    (Q6b_x == 1) | (Q6b_x == 2) | (Q6b_x == 3) ~ 'Physics',
+    Q6b.i_x == 1 ~ 'Engineering',
+    (Q6b.i_x == 2) | (Q6b.i_x == 3) ~ 'Other science',
+    Q6b.i_x == 4 ~ 'Other',
+    TRUE ~ 'Unknown'),
+  Gender = case_when(
+    (Q6e_3_y == 1) | (Q6e_7_y == 1) ~ 'Non-binary',
+    Q6e_2_y == 1 ~ 'Woman',
+    Q6e_1_y == 1 ~ 'Man',
+    (Q6e_3_x == 1) | (Q6e_7_x == 1) ~ 'Non-binary',
+    Q6e_2_x == 1 ~ 'Woman',
+    Q6e_1_x == 1 ~ 'Man',
+    TRUE ~ 'Unknown'
+  ),
+  Race.ethnicity.Other = 1 * ((Q6f_1_y == 1) | (Q6f_3_y == 1) | (Q6f_5_y == 1) | 
+                                (Q6f_7_y == 1) | (Q6f_1_x == 1) | (Q6f_3_x == 1) | 
+                                (Q6f_5_x == 1) | (Q6f_7_y == 1)),
+  Race.ethnicity.Hispanic = 1 * ((Q6f_4_y == 1) | (Q6f_4_x == 1)),
+  Race.ethnicity.Asian = 1 * ((Q6f_2_y == 1) | (Q6f_2_x == 1)),
+  Race.ethnicity.White = 1 * ((Q6f_6_y == 1) | (Q6f_6_x == 1)),
+  Race.ethnicity.Unknown = 1 * ((Race.ethnicity.Other == 0) & 
+                                  (Race.ethnicity.Hispanic == 0) & 
+                                  (Race.ethnicity.Asian == 0) & 
+                                  (Race.ethnicity.White == 0))) %>%
+  mutate(Major = relevel(as.factor(Major), ref = 'Physics'),
+         Gender = relevel(as.factor(Gender), ref = 'Man'),
+         Lab_Purpose = relevel(as.factor(Lab_Purpose), ref = 'Concepts'),
+         Lab_Level = relevel(as.factor(Lab_Level), ref = 'FY.Alg'))
+
+df.matched[is.na(df.matched)] <- 0
+df.matched[names(df.matched) %like% "Race"] <- 
+  lapply(df.matched[names(df.matched) %like% "Race"], factor, levels = c(1, 0))
+df.matched[names(df.matched) %like% "Race"] <- 
+  lapply(df.matched[names(df.matched) %like% "Race"], relevel, ref = '0')
+```
+
+# Demographic breakdowns
+```{r}
+Race.ethnicity.cols <- names(df.matched)[names(df.matched) %like% 'Race']
+Race.ethnicity.table <- function(df, Lab.Purpose = FALSE){
+  if(Lab.Purpose){
+    for(col in Race.ethnicity.cols){
+      print(col)
+      print(table(df[, col], df$Lab_Purpose))
+    }
+  } else {
+    for(col in Race.ethnicity.cols){
+      print(col)
+      print(table(df[, col]))
+    }
+  }
+}
+
+table(df.matched$Gender)
+Race.ethnicity.table(df.matched)
+table(df.matched$Major)
+table(df.matched$Lab_Purpose)
+table(df.matched$Gender, df.matched$Lab_Purpose)
+Race.ethnicity.table(df.matched, Lab.Purpose = TRUE)
+table(df.matched$Major, df.matched$Lab_Purpose)
+
+chisq.test(df.matched[!duplicated(df.matched$Class_ID), 'Lab_Purpose'], 
+           df.matched[!duplicated(df.matched$Class_ID), 'Lab_Level'])
+summary(aov(PreScores ~ Lab_Purpose, df.matched))
+```
+
+# Descriptive statistics
+```{r}
+plot.pre.post <- function(df, var){
+  if(var == 'Race.ethnicity'){
+    print(colSums(sapply(df[, names(df) %like% "Race"], 
+                         function (x) as.numeric(as.character(x)))))
+    
+    df.long <- reshape2::melt(df.matched, id.vars = names(df)[names(df) %like% "Race"], 
+                              measure.vars = c('PreScores', 'PostScores'),
+                              variable.name = 'Time', value.name = 'Score') %>%
+      reshape2::melt(., measure.vars = names(df)[names(df) %like% "Race"], 
+                     id.vars = c('Time', 'Score'), variable.name = 'Race.ethnicity') %>%
+      filter(value == 1) %>%
+      select(Time, Score, Race.ethnicity) %>%
+      rowwise() %>%
+      mutate(Race.ethnicity = strsplit(as.character(Race.ethnicity), '\\.')[[1]][3])
+    
+  } else {
+    print(table(df[, var]))
+    df.long <- reshape2::melt(df, measure.vars = c('PreScores', 'PostScores'), 
+                              variable.name = 'Time', value.name = 'Score')
+  }
+  
+  p <- ggplot(df.long, aes_string(x = var, y = 'Score', group = 'Time', color = 'Time'))
+  add_summary(p, fun = 'mean_se', group = c('Time')) +
+    scale_color_manual(labels = c('pre', 'post'), values = c('#2271B2', '#D55E00')) +
+    theme(axis.text.x = element_text(angle = 90))
+}
+
+plot.pre.post(df.matched, 'Major')
+plot.pre.post(df.matched, 'Gender')
+plot.pre.post(df.matched, 'Race.ethnicity')
+plot.pre.post(df.matched, 'Lab_Purpose')
+```
+
+# Mixed-effects models
+```{r}
+mod0 <- lmer(PostScores ~ (1 | Class_ID), df.matched)
+r2(mod0)
+
+mod1 <- lmer(PostScores ~ PreScores + Lab_Purpose + Lab_Level + Major + Gender + 
+               Race.ethnicity.Other + Race.ethnicity.Hispanic + Race.ethnicity.Asian + 
+               Race.ethnicity.White + (1 | Class_ID), df.matched)
+summary(mod1)
+
+mod2 <- lmer(PostScores ~ PreScores + Lab_Level + Major + Lab_Purpose * (Gender + 
+               Race.ethnicity.Other + Race.ethnicity.Hispanic + Race.ethnicity.Asian + 
+               Race.ethnicity.White) + (1 | Class_ID), df.matched)
+summary(mod2)
+
+r2(mod1)
+r2(mod2)
+
+noStandard.cols <- c('Lab_Purpose', 'Lab_Level', 'Major', 'Gender', 
+                     names(df.matched)[names(df.matched) %like% "Race"])
+class(mod1) <- "lmerMod"
+class(mod2) <- "lmerMod"
+beta(mod1, skip = noStandard.cols)
+beta(mod2, skip = noStandard.cols)
+```
+
+# Marginal effects plots
+```{r}
+# Main effect of lab goal from Model 1
+p1 <- plot_model(mod1, type = 'eff', terms = 'Lab_Purpose', dot.size = 4, line.size = 1, 
+                 ci.lvl = 0.67, title = '', 
+                 axis.title = 'Predicted PLIC posttest scores', 
+                 colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
+  theme(legend.position = 'right') +
+  scale_x_discrete(limits = c("Reinforce concepts", "Both about equally", 
+                              "Develop skills"))
+
+p1.new <- p1
+p1.new$data$x <- c(1, 2, 3)
+p1.new
+
+# Effects of gender across lab goal from Model 2
+
+p2 <- plot_model(mod2, type = 'eff', terms = c('Gender', 'Lab_Purpose'), dot.size = 4, 
+                 line.size = 1, ci.lvl = 0.67, title = '', 
+                 axis.title = 'Predicted PLIC posttest scores', 
+                 colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
+  theme(legend.position = 'right')
+
+p2.new <- p2
+p2.new$data$group <- factor(p2.new$data$group, levels = c("Concepts", "Both", "Skills"))
+p2.new
+```
+
+# Race/ethnicity marginal effects plots
+```{r}
+p3.other <- plot_model(mod2, type = 'eff', terms = c('Race.ethnicity.Other [1]', 
+                                                      'Lab_Purpose'))
+df.race.eff <- data.frame(p3.other$data) %>%
+  mutate(race.ethnicity = 'Race.ethnicity.Other')
+for(race in c('Race.ethnicity.Hispanic', 'Race.ethnicity.Asian', 'Race.ethnicity.White')){
+  p3 <- plot_model(mod2, type = 'eff', terms = c(paste(race, ' [1]', sep = ''),
+                                                 'Lab_Purpose'))
+  df.race.eff <- rbind(df.race.eff, data.frame(p3$data) %>%
+                         mutate(race.ethnicity = race))
+}
+
+df.race.eff <- df.race.eff %>%
+  mutate(group = factor(group, levels = c('Concepts', 'Both', 'Skills'), 
+                        ordered = TRUE)) %>%
+  rowwise() %>%
+  mutate(race.ethnicity = strsplit(race.ethnicity, '\\.')[[1]][3])
+
+ggplot(df.race.eff, aes(x = race.ethnicity, y = predicted, group = group, color = group)) +
+  geom_point(size = 4, position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size = 1, width = 0.2,
+                position = position_dodge(width = 0.5)) +
+  scale_color_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
+  labs(x = 'Race/ethnicity', y = 'Predicted PLIC posttest scores', color = 'Lab goal')
+```
+
+# Build measurement model for latent class variables
+```{r}
+df.matched[, names(df.matched) %like% "Q29|Q31"] <- 
+  data.frame(lapply(df.matched[, names(df.matched) %like% "Q29|Q31"], function(x) 
+    droplevels(factor(as.vector(x), levels = c('1', '2', '3', '4', '5'), ordered = TRUE))))
+
+mod <- '
+  agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q31_6
+  modeling =~ Q31_1 + Q31_2 + Q31_3 + Q31_4 + Q31_5
+'
+
+fit <- sem(mod, unique(df.matched[, names(df.matched) %like% "Q29|Q31"]))
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+semPaths(fit, whatLabels = 'std', edge.color = 'black', curve = 2, residuals = FALSE, 
+         label.scale = TRUE, mar = c(8, 8, 8, 8))
+```
+
+# With numeric data
+```{r}
+df.matched[, names(df.matched) %like% "Q29|Q31"] <- data.frame(lapply(df.matched[, names(df.matched) %like% "Q29|Q31"], function(x) as.numeric(x)))
+
+fit <- sem(mod, unique(df.matched[, names(df.matched) %like% "Q29|Q31"]))
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+semPaths(fit, whatLabels = 'std', edge.color = 'black', curve = 2, residuals = FALSE, 
+         label.scale = TRUE, mar = c(8, 8, 8, 8))
+```
+
+# EFA
+```{r}
+fa.parallel(unique(df.matched[, names(df.matched) %like% "Q29|Q31"]))
+fit <- fa(unique(df.matched[, names(df.matched) %like% "Q29|Q31"]), 2)
+fit
+fa.diagram(fit)
+```
+
+# CFA with model suggested by EFA (only minor changes that I think are theoretically justifiable)
+```{r}
+mod <- '
+  agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q31_6 + Q29_5
+  modeling =~ Q31_1 + Q31_2 + Q31_4
+'
+
+fit <- sem(mod, unique(df.matched[, names(df.matched) %like% "Q29|Q31"]))
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+semPaths(fit, whatLabels = 'std', edge.color = 'black', curve = 2, residuals = FALSE, 
+         label.scale = TRUE, mar = c(8, 8, 8, 8))
+```
+
+# Larger SEM model with latent class variables as mediating variables in the analysis
+```{r}
+df.matched <- df.matched %>%
+  mutate(Lab.goal.skills = 1 * (Lab_Purpose == 'Skills'),
+         Lab.goal.both = 1 * (Lab_Purpose == 'Both'),
+         Lab.goal.concepts = 1 * (Lab_Purpose == 'Concepts'))
+
+mod.sem <- '
+  level: 1
+    PostScores ~ PreScores
+  level: 2
+    agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q31_6 + Q29_5
+    modeling =~ Q31_1 + Q31_2 + Q31_4
+
+    agency ~ Lab.goal.skills + Lab.goal.both
+    modeling ~ Lab.goal.skills + Lab.goal.both
+
+    PostScores ~ agency + modeling + Lab.goal.skills + Lab.goal.both
+'
+
+fit <- sem(mod.sem, data = df.matched, cluster = "Class_ID")
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+```
