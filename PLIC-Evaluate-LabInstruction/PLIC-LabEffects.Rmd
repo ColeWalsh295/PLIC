@@ -11,6 +11,8 @@ library(reshape2)
 library(ggpubr)
 library(lmerTest)
 library(reghelper)
+library(car)
+library(lattice)
 library(sjstats)
 library(sjPlot)
 library(gridExtra)
@@ -215,8 +217,46 @@ noStandard.cols <- c('Lab_Purpose', 'Lab_Level', 'Major', 'Gender',
                      names(df.matched)[names(df.matched) %like% "Race"])
 class(mod1) <- "lmerMod"
 class(mod2) <- "lmerMod"
-beta(mod1, skip = noStandard.cols)
-beta(mod2, skip = noStandard.cols)
+mod1.std <- beta(mod1, skip = noStandard.cols)
+mod2.std <- beta(mod2, skip = noStandard.cols)
+```
+
+# Variance inflation factors and model diagnostics
+```{r}
+vif(mod1)
+vif(mod2)
+
+plot(mod1, xlab = 'Fitted values', ylab = 'Residuals')
+qqmath(mod1)
+
+plot(mod2, xlab = 'Fitted values', ylab = 'Residuals')
+qqmath(mod2)
+```
+
+# Output stargazer
+```{r, results = 'hide', message = FALSE, warning = FALSE}
+rownames(mod1.std$coefficients)[2] <- 'PreScores'
+rownames(mod2.std$coefficients)[2] <- 'PreScores'
+
+labels = c("Constant", "Pretest", "Both", "Skills", "BFY", "FY-Calc", "Engineering", 
+           "Other", "Other Sci", "Unknown Maj", "Non-binary", "Unknown Gen", "Woman", 
+           "Other Race", "Hispanic", "Asian", "White", "Both * Non-binary", 
+           "Skills * Non-binary", "Both * Unknown Gen", "Skills * Unknown Gen", 
+           "Both * Woman", "Skills * Woman", "Both * Other Race", "Skills * Other Race",  
+           "Both * Hispanic", "Skills * Hispanic", "Both * Asian", "Skills * Asian", 
+           "Both * White", "Skills * White")
+
+stargazer(mod1, mod1, mod1, mod1, mod2, mod2, mod2, mod2, 
+          coef = list(summary(mod1)$coefficients[, 1], summary(mod1)$coefficients[, 2], 
+                      mod1.std$coefficients[, 1], mod1.std$coefficients[, 2], 
+                      summary(mod2)$coefficients[, 1], summary(mod2)$coefficients[, 2],
+                      mod2.std$coefficients[, 1], mod2.std$coefficients[, 2]), 
+          se = list(summary(mod1)$coefficients[, 2], NA, mod1.std$coefficients[, 2], NA, 
+                    summary(mod2)$coefficients[, 2], NA, mod2.std$coefficients[, 2], NA), 
+          type='latex', intercept.bottom = FALSE, style = 'asr', keep.stat = c('n'), 
+          column.labels = c('Beta', 'SE', 'Beta.std', 'SE', 'Beta', 'SE', 'Beta.std', 
+                             'SE'), model.numbers = FALSE, covariate.labels = labels, 
+          dep.var.labels = 'PLIC posttest scores', out ='PLIC_models.tex')
 ```
 
 # Marginal effects plots
@@ -228,7 +268,8 @@ p1 <- plot_model(mod1, type = 'eff', terms = 'Lab_Purpose', dot.size = 4, line.s
                  colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
   theme(legend.position = 'right') +
   scale_x_discrete(limits = c("Reinforce concepts", "Both about equally", 
-                              "Develop skills"))
+                              "Develop skills")) +
+  xlab('Main purpose of lab')
 
 p1.new <- p1
 p1.new$data$x <- c(1, 2, 3)
@@ -240,11 +281,14 @@ p2 <- plot_model(mod2, type = 'eff', terms = c('Gender', 'Lab_Purpose'), dot.siz
                  line.size = 1, ci.lvl = 0.67, title = '', 
                  axis.title = 'Predicted PLIC posttest scores', 
                  colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
-  theme(legend.position = 'right')
+  theme(legend.position = 'right') +
+  scale_x_discrete(limits = c("Man", "Non-binary", "Woman", "Unknown")) +
+  labs(color = 'Lab purpose')
 
 p2.new <- p2
 p2.new$data$group <- factor(p2.new$data$group, levels = c("Concepts", "Both", "Skills"))
-p2.new
+p2.new$data$x <- rep(c(1, 2, 4, 3), 3)
+p2.new$data
 ```
 
 # Race/ethnicity marginal effects plots
@@ -271,7 +315,7 @@ ggplot(df.race.eff, aes(x = race.ethnicity, y = predicted, group = group, color 
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size = 1, width = 0.2,
                 position = position_dodge(width = 0.5)) +
   scale_color_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
-  labs(x = 'Race/ethnicity', y = 'Predicted PLIC posttest scores', color = 'Lab goal')
+  labs(x = 'Race/ethnicity', y = 'Predicted PLIC posttest scores', color = 'Lab purpose')
 ```
 
 # Build measurement model for latent class variables
@@ -333,15 +377,17 @@ mod.sem <- '
   level: 1
     PostScores ~ PreScores
   level: 2
-    agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q31_6 + Q29_5
-    modeling =~ Q31_1 + Q31_2 + Q31_4
+    agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q31_6
+    modeling =~ Q31_1 + Q31_2 + Q31_4 + Q31_5
 
     agency ~ Lab.goal.skills + Lab.goal.both
     modeling ~ Lab.goal.skills + Lab.goal.both
+    agency ~~ modeling
 
     PostScores ~ agency + modeling + Lab.goal.skills + Lab.goal.both
 '
 
 fit <- sem(mod.sem, data = df.matched, cluster = "Class_ID")
 summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+standardizedsolution(fit)
 ```
