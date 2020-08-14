@@ -38,32 +38,23 @@ MI.CI <- function(df.items, vec.scores, reps = 1000, CI.Low = 0.025, CI.High = 0
 #' returns data.frame containing mutual information between different item response
 #' choices and factor score
   
-  # apply MI.vec.to.bits to each column of df.items
   df.MI <- sapply(df.items, MI.vec.to.bits, vec.2 = vec.scores) %>%
     data.frame(.) %>%
     `colnames<-`(c("MI")) %>%
-    # get additional information from df.items: Item --- the item response choice, 
-    # Prop.Sel --- the proportion of students that selected a given response choice, and 
-    # Question --- the question that the item response choice was a part of
     mutate(Item = sapply(colnames(df.items), function(x) toupper(x)),
            Prop.Sel = round(colMeans(df.items), 3),
            Question = sapply(Item, function(x) toupper(substr(x, 1, 3)))) %>%
     select(Item, Question, Prop.Sel, MI) %>%
-    arrange(desc(MI)) # arrange in descending order by mutual information
+    arrange(desc(MI))
   
-  df <- cbind(df.items, vec.scores) # bind item response choices and scores for resampling
-  # get reps number of data.frames sampled with replacement from df
+  df <- cbind(df.items, vec.scores)
   df.boot <- replicate(reps, df[sample(1:nrow(df), replace = T),], simplify = F)
-  # apply mutual information calculation, as avbove, over each column within each
-  # data.frame replicate
   MI.boot <- sapply(df.boot, function(x) apply(x, 2, MI.vec.to.bits, vec.2 = x[, ncol(x)]))
   
-  # get quantiles of distributions of mutual information for each item response choice
   MI.CI <- apply(MI.boot, 1, quantile, probs = c(CI.Low, CI.High))
   MI.CI <- data.frame(t(MI.CI))
   MI.CI$Item <- toupper(row.names(MI.CI))
   
-  # join CIs to mutual information dataframe on item response choice
   df.CI <- left_join(df.MI, MI.CI, 'Item')
   colnames(df.CI)[(ncol(df.CI) - 1):ncol(df.CI)] <- c('CI.Low', 'CI.High')
   return(df.CI)
