@@ -130,6 +130,10 @@ def Generate(fname, width, NumReportedStudents, Course_Level, ID, MainFolder, We
                                     your students' total scores, found by summing scores on individual questions. Additionally, Fig.~\ref{fig:Factors} shows the performance of students
                                     from similar classes that have taken the PLIC for comparison purposes.
                                     """))
+            try: # for when instructors do not enter a number in the 'number of students' field on the CIS
+                NumReportedStudents = float(NumReportedStudents)
+            except:
+                NumReportedStudents = NumPostResponses
             with doc.create(MiniPage(width = NoEscape(r'0.5\linewidth'), pos = 'c', align = 'r')):
                     with doc.create(Center()) as centered:
                         with doc.create(Tabular('| l | r |')) as Tab1:
