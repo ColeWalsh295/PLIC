@@ -1,4 +1,10 @@
+# Module UI functions
+# corresponding server functions use the same function name with 'UI' removed from the end
+
 DownloadClassDataUI <- function(id, label, value){
+  # create textbox for class ID input and download button for class data
+  
+  # Create a namespace function using the provided id
   ns <- NS(id)
 
   fluidRow(
@@ -8,6 +14,8 @@ DownloadClassDataUI <- function(id, label, value){
 }
 
 ClassStatisticsOutput <- function(id){
+  # create summary statistics boxes
+  
   ns <- NS(id)
   
   fluidRow(
@@ -18,6 +26,8 @@ ClassStatisticsOutput <- function(id){
 }
 
 ScalePlotUI <- function(id, Demos = TRUE){
+  # create boxplots of students' scores on selected factors
+  
   ns <- NS(id)
   
   if(Demos){
@@ -43,6 +53,8 @@ ScalePlotUI <- function(id, Demos = TRUE){
 }
 
 QuestionPlotUI <- function(id, Demos = FALSE){
+  # create boxplots of students' scores on selected questions
+  
   ns <- NS(id)
   
   if(Demos){
@@ -60,6 +72,9 @@ QuestionPlotUI <- function(id, Demos = FALSE){
 }
 
 ResponsesPlotUI <- function(id, Demos = TRUE){
+  # create bar plots of fraction of students selecting item response choices on selected
+  # questions
+  
   ns <- NS(id)
   
   if(!Demos){

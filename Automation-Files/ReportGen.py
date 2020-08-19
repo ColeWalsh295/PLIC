@@ -6,7 +6,18 @@ import pylatex.config as cf
 from pylatex import Document, Package, Center, NewPage, Section, MiniPage, FootnoteText, Figure, Tabular, Table, NoEscape, Itemize
 import ReportGraph
 
-def Generate(fname, width, NumReportedStudents, Course_Level, ID, MainFolder, WeightsFile = 'Weights_May2019.csv', **Dataframes):
+def Generate(fname, NumReportedStudents, Course_Level, ID, MainFolder, WeightsFile = 'Weights_May2019.csv', **Dataframes):
+    """Generate a pdf report summarizing class performance on the PLIC
+
+    Keyword arguments:
+    fname -- filename to write report to as a pdf
+    NumReportedStudents -- the number of students reported to be in the class
+    Course_Level -- the level of the course students taking the surveyw were enrolled in
+    ID -- ResponseID from course information survey
+    MainDirectory -- path to main direcory with supplemental files for the report
+    WeightsFile -- weights applied to PLIC item response choices during scoring
+    Dataframes -- pandas dataframes of students responses to the PRE, MID, and/or POST survey
+    """
 
     # Load the historical data
     CumulativePre = MainFolder + 'PreSurveys_ValMat.csv'

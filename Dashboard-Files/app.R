@@ -1,3 +1,5 @@
+# future version should adopt changes made to the Bio-MAPS dashboard to improve functionality
+
 library(tidyverse)
 library(shiny)
 library(shinyjs)
@@ -12,44 +14,46 @@ source('PLIC_DataProcessing.R', local = TRUE)
 source('PLIC_UI.R', local = TRUE)
 source('PLIC_Server.R', local = TRUE)
 
-# Get Complete dataset, remove free response only responses
 Header.df <- fread('Headers.csv')
 
 PLIC.Complete.df <- fread('Complete_Concat_DeIdentified.csv')
 PLIC.Complete.df$Student.ID.Anon <- row.names(PLIC.Complete.df)
 PLIC.Complete.df <- PrePost.Long(PLIC.Complete.df)
 
+# separate open-response (FR) and closed-response surveys
 PLIC.FR <- PLIC.Complete.df %>%
   filter(Survey == 'F')
 PLIC.CR <- PLIC.Complete.df %>%
   filter(Survey == 'C')
 
-# Fit CFA model
+# Hypothesized model evaluated in prior work
 PLIC.model.HYP <- ' models  =~ Q1B + Q2B + Q3B + Q3D
                     methods =~ Q1D + Q2D + Q4B
                     actions =~ Q1E + Q2E + Q3E '
 
+# only use CR for model development
 mod.cfa.HYP <- cfa(PLIC.model.HYP, data = PLIC.CR, std.lv = TRUE, estimator = 'ML')
 
 scores.df <- data.frame(lavPredict(mod.cfa.HYP))
-PLIC.CR <- cbind(PLIC.CR, scores.df) # Merge factor scores back to the dataframe
+PLIC.CR <- cbind(PLIC.CR, scores.df) # merge factor scores back to the dataframe
 
 PLIC.Merged.df <- fread('Complete_Concat_DeIdentified.csv') %>%
-  filter(Survey_x == 'C' & Survey_y == 'C')
+  filter(Survey_x == 'C' & Survey_y == 'C') # separate data.frame for matched surveys
 PLIC.Merged.df$Student.ID.Anon <- row.names(PLIC.Merged.df)
 PLIC.Merged.df <- PrePost.Long(PLIC.Merged.df)
 scores.df <- data.frame(lavPredict(mod.cfa.HYP, newdata = PLIC.Merged.df))
 PLIC.Merged.df <- cbind(PLIC.Merged.df, scores.df) # Merge factor scores back to the dataframe
 
+### UI code ##############################################################################
 
-
-### Set up the 'View of your class' tab ###
+### Your class tab ###
 
 Your_tab = tabItem(
   tabName = "Your_Class",
   h2("View of your class"),
   
-  DownloadClassDataUI('Class.Main.Download', label = 'Your Class ID:', value = 'R_2xOT2Y1NtNiseCk'),
+  DownloadClassDataUI('Class.Main.Download', label = 'Your Class ID:', 
+                      value = 'R_2xOT2Y1NtNiseCk'),
   br(),
   ClassStatisticsOutput('Class.Main.Statistics'),
   br(),
@@ -59,6 +63,8 @@ Your_tab = tabItem(
   br(),
   ResponsesPlotUI('Class.Main.Responses', Demos = TRUE)
 )
+
+### Compare two of your classes tab ###
 
 Compare_tab = tabItem(
   tabName = "Compare_Classes",
@@ -80,6 +86,8 @@ Compare_tab = tabItem(
   ResponsesPlotUI('Class.Compare.Responses', Demos = FALSE)
 )
 
+### Compare your class to national dataset tab ###
+
 Overall_tab = tabItem(
   tabName = "Compare_Overall",
   h2("Compare your classes to other classes"),
@@ -99,8 +107,12 @@ Overall_tab = tabItem(
   ResponsesPlotUI('Overall.Compare.Responses', Demos = FALSE)
 )
 
+### Server code ##########################################################################
+
 server = function(input, output) {
   df <- reactive({
+    # depending on user input, get matched dataset or full dataset
+    # could replace need for two data.frames by adding column denoting matched to PLIC.CR
     if(input$matched == 'Matched'){
       df <- PLIC.Merged.df
     } else {
@@ -110,24 +122,32 @@ server = function(input, output) {
   })
   
   Data.Include <- reactive({
+    # make matching reactive
     Data.Include <- input$matched
     return(Data.Include)
   })
   
-  ### Your Class ###
+  ### Your Class tab ###
   
-  PLIC.Class <- callModule(DownloadClassData, 'Class.Main.Download', data = df, Type = Data.Include)
+  PLIC.Class <- callModule(DownloadClassData, 'Class.Main.Download', data = df, 
+                           Type = Data.Include)
+  # Shiny update 1.5.0 introduced moduleServer, which can be used in lieu of callModule
+  # for maintainability
   callModule(ClassStatistics, 'Class.Main.Statistics', data = PLIC.Class)
+  # set demographic as reactive to update two plots on this tab simultaneously with
+  # demographic input
   demographic <- reactiveVal()
   demographic <- callModule(ScalePlot, 'Class.Main.Scale', data = PLIC.Class)
   callModule(QuestionPlot, 'Class.Main.Question', data = PLIC.Class, Demo = demographic)
   callModule(ResponsesPlot, 'Class.Main.Responses', data = PLIC.Class, Demo = demographic)
   
-  ### Compare Classes ###
+  ### Compare Classes tab ###
   
-  PLIC.Class1 <- callModule(DownloadClassData, 'Class1.Download', data = df, Type = Data.Include)
+  PLIC.Class1 <- callModule(DownloadClassData, 'Class1.Download', data = df, 
+                            Type = Data.Include)
   callModule(ClassStatistics, 'Class1.Statistics', data = PLIC.Class1)
-  PLIC.Class2 <- callModule(DownloadClassData, 'Class2.Download', data = df, Type = Data.Include)
+  PLIC.Class2 <- callModule(DownloadClassData, 'Class2.Download', data = df, 
+                            Type = Data.Include)
   callModule(ClassStatistics, 'Class2.Statistics', data = PLIC.Class2)
 
   PLIC.Compare <- reactive({
@@ -135,12 +155,13 @@ server = function(input, output) {
   })
   callModule(ScalePlot, 'Class.Compare.Scale', data = PLIC.Compare, Class.var = 'Class_ID')
   question.compare <- reactiveVal()
-  question.compare <- callModule(QuestionPlot, 'Class.Compare.Question', data = PLIC.Compare,
+  question.compare <- callModule(QuestionPlot, 'Class.Compare.Question', 
+                                 data = PLIC.Compare,
                                  Class.var = 'Class_ID')
   callModule(ResponsesPlot, 'Class.Compare.Responses', data = PLIC.Compare, 
              Question = question.compare, Class.var = 'Class_ID')
   
-  ### Compare to overall PLIC dataset ###
+  ### Compare your class to national dataset tab ###
   
   PLIC.Class.You_temp <- callModule(DownloadClassData, 'Class.You.Download', data = df, 
                                     Type = Data.Include)
@@ -148,7 +169,7 @@ server = function(input, output) {
   
   PLIC.Class.You <- reactive({
     PLIC.Class.You <- PLIC.Class.You_temp() %>%
-      mutate(Class = 'Your Class')
+      mutate(Class = 'Your Class') # add a column separating YOUR class from other classes
     return(PLIC.Class.You)
   })
   PLIC.Class.Other <- reactive({
@@ -156,27 +177,30 @@ server = function(input, output) {
       mutate(Class = 'Other Classes')
     return(PLIC.Class.Other)
   })
-  callModule(ClassStatistics, 'Class.Other.Statistics', data = PLIC.Class.Other, Overall = TRUE)
+  callModule(ClassStatistics, 'Class.Other.Statistics', data = PLIC.Class.Other, 
+             Overall = TRUE)
   
   PLIC.Overall <- reactive({
     rbind(PLIC.Class.You(), PLIC.Class.Other())
   })
   callModule(ScalePlot, 'Overall.Compare.Scale', data = PLIC.Overall, Class.var = 'Class')
   question.overall <- reactiveVal()
-  question.overall <- callModule(QuestionPlot, 'Overall.Compare.Question', data = PLIC.Overall,
+  question.overall <- callModule(QuestionPlot, 'Overall.Compare.Question', 
+                                 data = PLIC.Overall,
                                  Class.var = 'Class')
   callModule(ResponsesPlot, 'Overall.Compare.Responses', data = PLIC.Overall, 
              Question = question.overall, Class.var = 'Class')
 }
 
-# Set up the Header of the dashboard
+##########################################################################################
+
 dhead = dashboardHeader(title = "PLIC Dashboard")
 
-# Set up the sidebar which links to two pages
 dside = dashboardSidebar(sidebarMenu(
   radioButtons('matched', 'Type of Data:', choices = c('Matched', 'All Valid')),
   menuItem("View your class", tabName = "Your_Class", icon = icon("dashboard")),
-  menuItem(HTML("Compare two of<br>your classes"), tabName = "Compare_Classes", icon = icon("dashboard")),
+  menuItem(HTML("Compare two of<br>your classes"), tabName = "Compare_Classes", 
+           icon = icon("dashboard")),
   menuItem(HTML("Compare your class<br>to other classes"), tabName = "Compare_Overall", 
            icon = icon("dashboard"))
 ))
@@ -189,10 +213,8 @@ dbody = dashboardBody(
   tabItems(Your_tab, Compare_tab, Overall_tab)
 )
 
-# Combining header, sidebar, and body
 ui = tagList(useShinyjs(), useShinyalert(), dashboardPage(dhead, dside, dbody))
 
-# Generating a local instance of your dashboard
 shinyApp(ui, server)
 
 

@@ -1,5 +1,9 @@
+# Module server functions
+# corresponding UI functions use the same function name with 'UI' appended to the end
+
 DownloadClassData <- function(input, output, session, data, Type) {
-  
+  # retrieves relevant class data based on user input and provides downloadable data to
+  # write to .csv
 
   class.CR <- reactive({
     class.CR <- PLIC.CR[PLIC.CR[, 'Class_ID'] == input$classID,]
@@ -14,6 +18,9 @@ DownloadClassData <- function(input, output, session, data, Type) {
   
   observe({
     toggleState("downloadData", condition = class.CR()[1, 'Download_Available'])
+    # if the data would be identififable if made available, we do not provide it
+    # we have received approval to provide identifiable data, so this can be observe({})
+    # will be removed in the next update
     if(Type() == 'Matched'){
       if(!class.CR()[1, 'Matched_Available']){
         shinyalert("Oops!", "There are too few students in the matched dataset.", type = "error")
@@ -30,6 +37,8 @@ DownloadClassData <- function(input, output, session, data, Type) {
     })
   
   data.out <- reactive({
+    # we put things in long form for plotting, but we put things in wide form to give to
+    # instructors
     data.class.pre <- data.class() %>%
       filter(TimePoint == 'PRE') %>%
       select(-c('TimePoint'))
@@ -41,6 +50,7 @@ DownloadClassData <- function(input, output, session, data, Type) {
                       all = TRUE, suffixes = c('_PRE', '_POST')) %>%
       select(-c('Student.ID.Anon', 'Class_ID'))
     data.out <- data.out %>%
+      # demographics only provided if not indentifiable...will be removed in a future version
       mutate(Gender = ifelse(Gender_Available_Download_PRE | Gender_Available_Download_POST, 
                              Gender, NA_character_),
              URM_Status = ifelse(URM_Available_Download_PRE | URM_Available_Download_POST, 
@@ -65,6 +75,7 @@ DownloadClassData <- function(input, output, session, data, Type) {
   )
   
   df.return <- reactive({
+    # user input determines if they get matched data or all valid surveys
     if(((Type() == 'Matched') & (class.CR()[1, 'Matched_Available'])) | 
        ((Type() == 'All Valid') & (class.CR()[1, 'Valid_Available']))){
       df.return <- data()[data()[, 'Class_ID'] == input$classID,]
@@ -78,6 +89,8 @@ DownloadClassData <- function(input, output, session, data, Type) {
 }
 
 ClassStatistics <- function(input, output, session, data, Overall = FALSE){
+  # computes and returns summary statistics for a set of data
+  
   output$infoNStudents <- renderInfoBox({
     infoBox(HTML("Number of<br>Students"),
             length(unique(data()$Student.ID.Anon)),
@@ -104,6 +117,8 @@ ClassStatistics <- function(input, output, session, data, Overall = FALSE){
 }
 
 ScalePlot <- function(input, output, session, data, Class.var = NULL){
+  # plot box plots of students' scores on different dimensions
+  
   Scale <- reactive({
     case_when(input$scale == 'Evaluating Models' ~ 'models',
               input$scale == 'Evaluating Methods' ~ 'methods',
@@ -145,11 +160,12 @@ ScalePlot <- function(input, output, session, data, Class.var = NULL){
     return(p)
   })
   if(is.null(Class.var)){
-    return(reactive(input$demographic))
+    return(reactive(input$demographic)) # return demographic variable to use in later plots
   }
 }
 
 QuestionPlot <- function(input, output, session, data, Demo = NULL, Class.var = NULL){
+  # make box plots of students' scores on each question
   
   if(!is.null(Demo)){
     Demographic <- reactive({
@@ -157,11 +173,12 @@ QuestionPlot <- function(input, output, session, data, Demo = NULL, Class.var = 
     })
     Questions.df <- reactive({
       if(Demographic() == 'None'){
-        Questions.df <- melt(data()[, c('TimePoint', 'Q1B', 'Q1D', 'Q1E', 'Q2B', 'Q2D', 'Q2E', 'Q3B', 
-                                        'Q3D', 'Q3E', 'Q4B')], id.vars = 'TimePoint')     
-      } else {
-        Questions.df <- melt(data()[, c('TimePoint', Demographic(), 'Q1B', 'Q1D', 'Q1E', 'Q2B', 'Q2D', 
+        Questions.df <- melt(data()[, c('TimePoint', 'Q1B', 'Q1D', 'Q1E', 'Q2B', 'Q2D', 
                                         'Q2E', 'Q3B', 'Q3D', 'Q3E', 'Q4B')], 
+                             id.vars = 'TimePoint')     
+      } else {
+        Questions.df <- melt(data()[, c('TimePoint', Demographic(), 'Q1B', 'Q1D', 'Q1E', 
+                                        'Q2B', 'Q2D', 'Q2E', 'Q3B', 'Q3D', 'Q3E', 'Q4B')], 
                              id.vars = c('TimePoint', Demographic()))  
         Questions.df <- Questions.df[Questions.df[, Demographic()] != '',]
       }
@@ -183,7 +200,8 @@ QuestionPlot <- function(input, output, session, data, Demo = NULL, Class.var = 
       ggplot(data(), aes_string(x = 'TimePoint', y = toupper(input$question), 
                                 color = Class.var)) +
         geom_boxplot() +
-        labs(x = 'TimePoint', y = 'Score', title = "Compare students' performance by question") +
+        labs(x = 'TimePoint', y = 'Score', 
+             title = "Compare students' performance by question") +
         scale_color_manual(values = c("#0072b2", "#d55e00", "#009e73", "#cc79a7")) +
         shiny_theme
     })
@@ -193,6 +211,8 @@ QuestionPlot <- function(input, output, session, data, Demo = NULL, Class.var = 
 
 ResponsesPlot <- function(input, output, session, data, Demo = NULL, Question = NULL, 
                           Class.var = NULL){
+  # make bar plots of fraction of students selecting each item response choice
+  
   if(!is.null(Demo)){
     Demographic <- reactive({
       Demographic <- Demographitize(Demo())
@@ -200,14 +220,16 @@ ResponsesPlot <- function(input, output, session, data, Demo = NULL, Question = 
     Responses.df <- reactive({
       if(Demographic() == 'None'){
         Responses.df <- data() %>%
-          select(c(grep(paste('^(', input$question, '_[0-9]*$)', sep = ''), names(.))), 'TimePoint') %>% 
+          select(c(grep(paste('^(', input$question, '_[0-9]*$)', sep = ''), names(.))), 
+                 'TimePoint') %>% 
           replace(is.na(.), 0) %>%
           group_by(TimePoint) %>%
           summarize_all(funs(mean)) %>%
           melt(.)
       } else {
         Responses.df <- data() %>%
-          select(c(grep(paste('^(', input$question, '_[0-9]*$)', sep = ''), names(.))), 'TimePoint', Demographic()) %>% 
+          select(c(grep(paste('^(', input$question, '_[0-9]*$)', sep = ''), names(.))), 
+                 'TimePoint', Demographic()) %>% 
           replace(is.na(.), 0) %>%
           group_by_('TimePoint', Demographic()) %>%
           summarize_all(funs(mean)) %>%
@@ -232,7 +254,8 @@ ResponsesPlot <- function(input, output, session, data, Demo = NULL, Question = 
   } else {
     Responses.df <- reactive({
       Responses.df <- data() %>%
-        select(c(grep(paste('^(', Question(), '_[0-9]*$)', sep = ''), names(.))), Class.var, 
+        select(c(grep(paste('^(', Question(), '_[0-9]*$)', sep = ''), names(.))), 
+               Class.var, 
                'TimePoint') %>% 
         replace(is.na(.), 0) %>%
         group_by_('TimePoint', Class.var) %>%
@@ -255,6 +278,8 @@ ResponsesPlot <- function(input, output, session, data, Demo = NULL, Question = 
 }
 
 Demographitize <- function(demo){
+  # rename demographic variables to be more readable
+  
   Demo <- case_when(demo == 'Gender' ~ 'Gender',
                     demo == 'Major' ~ 'Major',
                     demo == 'URM' ~ 'URM_Status',
@@ -264,6 +289,9 @@ Demographitize <- function(demo){
 }
 
 DisableRadio <- function(df, Type){
+  # legacy; remove in future versions
+  # disable particular radio buttons
+  
   for(Option in c('Gender', 'URM', 'Major', 'Class_Standing')){
     if(!df()[1, paste(Option, '_Available_', Type, sep = '')]){
       shinyjs::runjs(paste("$('[type = radio][value = ", Option, "]').parent().parent().css('opacity', 0.4)", sep = ''))

@@ -3,45 +3,65 @@ import pandas as pd
 import sys
 
 def ValMat(DoMatch = True, **Dataframes):
+    """Filter out invalid PLIC responses and match students
+
+    Keyword arguments:
+    DoMatch -- binary; whether to match survey responses by student
+    Dataframes -- pandas dataframes of students responses to the PRE, MID, and/or POST survey
+    """
+
     dfPost = Dataframes['POST']
     dfPost = Validate(dfPost, 'POST')
     NValidPost = len(dfPost.index)
-    if('PRE' in Dataframes.keys()):
+    if('PRE' in Dataframes.keys()): # conditions dictate which surveys to look for, validate, and match
         dfPre = Dataframes['PRE']
         dfPre = Validate(dfPre, 'PRE')
         NValidPre = len(dfPre.index)
         if('MID' not in Dataframes.keys() and DoMatch == True):
-            dfPre, dfPost = Match(dfPre = dfPre, dfPost = dfPost) # Matching Pre and Post
+            dfPre, dfPost = Match(dfPre = dfPre, dfPost = dfPost)
             return NValidPre, NValidPost, dfPre, dfPost
         elif('MID' in Dataframes.keys()):
             dfMid = Dataframes['MID']
             dfMid = Validate(dfMid, 'MID')
             NValidMid = len(dfMid.index)
             if(DoMatch == True):
-                dfPre, dfMid, dfPost = Match(dfPre = dfPre, dfMid = dfMid, dfPost = dfPost) # Matching Pre, Mid, and Post
+                dfPre, dfMid, dfPost = Match(dfPre = dfPre, dfMid = dfMid, dfPost = dfPost)
             return NValidPre, NValidMid, NValidPost, dfPre, dfMid, dfPost
 
     else:
         return NValidPost, dfPost
 
 def Validate(df, Survey):
+    """Remove invalid survey responses to the PLIC
+
+    Keyword arguments:
+    df -- pandas dataframe of student responses to the PLIC
+    Survey -- which survey to validate: PRE/MID/ or POST
+    """
+
     if(Survey == 'POST'):
-        # df = df[(df['Finished'] == 1) & (df['Unnamed: 8'] == 1) & (df['Q6d'] == 2)] # Drop students who are not consenting, did not finish, or are not at least 18 at Post
-        df = df[(df['V5'] == 1) & (df['Unnamed: 7'] == 1) & (df['Q6d'] == 2)]
+        df = df[(df['V5'] == 1) & (df['Unnamed: 7'] == 1) & (df['Q6d'] == 2)] # must finish, consent, and be at least 18 at posttest
     else:
-        # df = df[(df['Finished'] == 1)] # Drop students who did not finish the pre/mid survey
-        df = df[(df['V5'] == 1)]
-    df = df.dropna(how = 'all', subset = ['Q5a', 'Q5b', 'Q5c']) # Drop students who did not provide any id or first/last name
-    df = df[(df['Qt1_3'] >= 30) | (df['Qt2_3'] >= 30) | (df['Qt3_3'] >= 30) | (df['Qt4_3'] >= 30)] # Drop students who do not spend at least 30s on one page
+        df = df[(df['V5'] == 1)] # just need to finish any othe survey
+    df = df.dropna(how = 'all', subset = ['Q5a', 'Q5b', 'Q5c']) # drop students who did not provide any id or first/last name
+    df = df[(df['Qt1_3'] >= 30) | (df['Qt2_3'] >= 30) | (df['Qt3_3'] >= 30) | (df['Qt4_3'] >= 30)] # drop students who do not spend at least 30s on one page
 
     return df
 
 def Match(dfPre, dfPost, dfMid = None):
+    """Match students' responses across multiple surveys
+
+    Keyword arguments:
+    dfPre -- pandas dataframe of pretest survey responses
+    dfPost -- pandas dataframe of posttest survey responses
+    dfMid -- pandas dataframe of midtest survey responses
+    """
+
     dfPre = ProcessNames(dfPre)
     dfPost = ProcessNames(dfPost)
 
     PreNameSet = set.union(set(dfPre['FullName']), set(dfPre['BackName'])) # Get the pool of full names (including reversed) that are in the pre survey
-    PostNameSet = set.union(set(dfPost['FullName']), set(dfPost['BackName'])) # Get the pool of full names (including reversed) that are in the post survey
+    PostNameSet = set.union(set(dfPost['FullName']), set(dfPost['BackName'])) # and same for post
     if np.nan in PreNameSet:
         PreNameSet = PreNameSet.remove(np.nan)
     if np.nan in PostNameSet:
@@ -113,10 +133,16 @@ def Match(dfPre, dfPost, dfMid = None):
         return dfPre, dfMid, dfPost
 
 def ProcessNames(df):
-        df['Q5a'] = df['Q5a'].astype(str).str.split('@').str.get(0).str.lower() # Keep only first part of email addresses and take the lower case of all ids
-        df['FullName'] = (df['Q5b'].apply(str).str.lower() + df['Q5c'].apply(str).str.lower()).str.replace('\W', '') # Get full name in lower case with no white space
-        df['BackName'] = (df['Q5c'].apply(str).str.lower() + df['Q5b'].apply(str).str.lower()).str.replace('\W', '') # Get reverse full name in lower case with no white space
-        df.loc[df['FullName'].map(len) <= 2, 'FullName'] = '' # Keep only full names with more than 2 characters
-        df = df.drop_duplicates(subset = ['FullName']).drop_duplicates(subset = ['Q5a']) # Drop second entry if there are duplicate full names
+    """Process students' names and IDs for analysis and merging
 
-        return df
+    Keyword arguments:
+    df -- pandas dataframe of student responses to the PLIC
+    """
+    
+    df['Q5a'] = df['Q5a'].astype(str).str.split('@').str.get(0).str.lower() # Keep only first part of email addresses and take the lower case of all ids
+    df['FullName'] = (df['Q5b'].apply(str).str.lower() + df['Q5c'].apply(str).str.lower()).str.replace('\W', '') # Get full name in lower case with no white space
+    df['BackName'] = (df['Q5c'].apply(str).str.lower() + df['Q5b'].apply(str).str.lower()).str.replace('\W', '') # Get reverse full name in lower case with no white space
+    df.loc[df['FullName'].map(len) <= 2, 'FullName'] = '' # Keep only full names with more than 2 characters
+    df = df.drop_duplicates(subset = ['FullName']).drop_duplicates(subset = ['Q5a']) # Drop second entry if there are duplicate full names
+
+    return df

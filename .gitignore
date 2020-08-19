@@ -1,3 +1,7 @@
 
 MutualInformation/.Rhistory
 *.log
+*.ipynb
+*.pyc
+*.csv
+PLIC-Evaluate-LabInstruction/.Rhistory
