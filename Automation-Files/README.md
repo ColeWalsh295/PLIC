@@ -1,13 +1,13 @@
-# PLIC Automation
+# Automation files
 
-Code used for automatically administering PLIC surveys at specified times by instructors in an online Qualtrics survey.
+The scripts included here are part of the automated administration system used to administer the PLIC.
 
-PythonAutomation.py --- main code that is run on a loop to handle the creation of new PLIC surveys and send emails with links and reminders to instructors. When all surveys have closed for a particular class, summary reports are created and emailed to instructors.
+`PythonAutomation.py` includes the main administration code and functions that communicate with the Qualtrics survey platform. `PythonAutomation_v2.py` is a new version of the administration system that builds on version 1 by improving readability, reducing the amount of code, and increasing the efficiency of the system. We are currently testing version 2 and anticipate deploying this version in the near future.
 
-ReportGen.py --- pdf reports are created for an instructor's class compared to similar classes using pylatex.
+`ReportGen.py` includes functions that leverage `pylatex` to generate summary reports of student performance on the PLIC. These functions are called by `PythonAutomation.py` as part of the administration system, but can be called independently to generate reports for any PLIC dataset.
 
-ReportGraph.py --- figures that are used in the reports are generated.
+`ReportGraph.py` includes functions that score students' responses to the PLIC and generate summary box plots of students' scores along various dimensions. These functions are called by `ReportGen_BIOMAPS.py` as part of the administration system, but can be called independently to generate graphs for any PLIC dataset.
 
-Valid_Matched.py --- PLIC surveys are filtered so that only valid entries are kept. These are matched across pre-(mid)-post iterations by student.
+`Scoring.py` includes functions to score each of the PLIC questions and sum students' scores to produce an aggregate score. `Scoring.py` also leverages `rpy2` to conduct a confirmatory factor analysis on students' responses and produce factor scores along each of the dimensions the PLIC was designed to measure: students' abilities to evaluate models, evaluate methods, and suggest next steps in an experimental physics context.
 
-Scoring.py --- Calculates scores for each student on each question on the PLIC as well as factor scores and total scores.
+`Valid_Matched.py` provides functions for filtering out invalid PLIC surveys from a dataset, as well as functions that match students' responses at up to three timepoints.
