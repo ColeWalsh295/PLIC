@@ -1,8 +1,5 @@
 
-MutualInformation/.Rhistory
-*.log
-*.ipynb
-*.pyc
 *.csv
+*.ipynb
+Statistical-Validation/.Rhistory
 PLIC-Evaluate-LabInstruction/.Rhistory
-OpenResponse-analysis/.Rhistory
