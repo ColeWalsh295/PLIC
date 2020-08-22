@@ -1,3 +1,4 @@
 
 *.csv
-*.ipynb
+*.log
+Processing-Scripts/Generate_Collective_Surveys_May2019.ipynb
