@@ -1,0 +1,48 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+# Import necessary packages
+```{r, results = FALSE, warning = FALSE, message = FALSE}
+library(tidyverse)
+library(xlsx)
+source('interrater_reliability.R', local = TRUE)
+```
+
+# Import and clean CW and NH Fall 2017 1116 coded files
+```{r, warning = FALSE, message = FALSE}
+OthersList <- c('Q1b_19', 'Q1d_10', 'Q1e_12', 'Q2b_38', 'Q2d_11', 'Q2e_11', 'Q3b_10', 
+                'Q3d_29', 'Q3e_8', 'Q4b_11')
+
+df.NH <- read.xlsx('C:/Users/Cole/Documents/DATA/PLIC_DATA/Coded_OR/NH/Fall2017_Cornell_University_1116_Smith_POST_new_FR_NH.xlsx', 
+                   sheetName = 1)
+df.NH <- df.NH[2:nrow(df.NH),] %>%
+  select(-which(names(.) %in% OthersList))
+
+df.CW <- read.xlsx('C:/Users/Cole/Documents/DATA/PLIC_DATA/Coded_OR/CW/Fall2017_Cornell_University_1116_Smith_POST_new_FR_CW.xlsx', 
+                   sheetName = 1)
+df.CW <- df.CW[2:nrow(df.CW),] %>%
+  select(-which(names(.) %in% OthersList))
+
+df.NH[!is.na(df.NH)] <- 1
+df.CW[!is.na(df.CW)] <- 1
+
+df.CW <- data.frame(sapply(df.CW, as.numeric))
+df.NH <- data.frame(sapply(df.NH, as.numeric))
+
+df.NH[is.na(df.NH)] <- 0
+df.CW[is.na(df.CW)] <- 0
+```
+
+# Apply Fuzzy.Kappa to each question
+```{r}
+for(Q in c('Q1b', 'Q1d', 'Q1e', 'Q2b', 'Q2d', 'Q2e', 'Q3b', 'Q3c', 'Q3d')){
+  print(Q)
+  print(Fuzzy.Kappa(df.CW[, grep(paste('(', Q, '_[0-9]*$)', sep = ''), names(df.CW))], 
+              df.NH[, grep(paste('(', Q, '_[0-9]*$)', sep = ''), names(df.NH))]))
+}
+```
+
+**There are some guidelines for how to interpret Kappa, but these usually cause more harm than good. Our results point to very strong agreement for certain questions (i.e., Q1e, Q2d, and Q2e). All other questions have at least fair agreement except for Q3d, where there is essentially no better agreement between coders than would be obtained through random guessing.**
+
