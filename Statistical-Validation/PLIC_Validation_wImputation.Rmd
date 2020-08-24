@@ -1,0 +1,482 @@
+```{r}
+library(xlsx)
+library(MASS)
+library(reshape2)
+library(broom)
+library(plyr)
+library(infer)
+library(boot)
+library(effsize)
+library(psych)
+library(tidyverse)
+library(lsr)
+library(mice)
+library(Amelia)
+library(miceadds)
+```
+
+```{r include=FALSE}
+df <- read.csv('C:/Users/Cole/Documents/GRA_Summer2018/Surveys/Collective_Surveys/Completely_Merged_Dataset12022018.csv')
+
+df_CIS <- read.csv('C:/Users/Cole/Documents/GRA_Summer2018/Surveys/Collective_Surveys/Course_Information_Survey.csv')[-1,]
+
+nrow(df)
+str(df)
+```
+
+# CIS cleaning
+```{r}
+df_CIS_cleaned <- df_CIS %>%
+  mutate(Semester = case_when(
+    Q9a == 1 ~ 'Fall',
+    (Q9 == 1 & Q9a == 2) | (Q9 == 2 & Q9b == 3) ~ 'Spring',
+    (Q9 == 1 & Q9a == 3) | (Q9 == 2 & Q9b == 4) ~ 'Summer',
+    (Q9 == 1 & Q9a == 4) | (Q9 == 2 & Q9b == 5) ~ 'Year',
+    Q9 == 2 & Q9b == 2 ~ 'Winter',
+    TRUE ~ NA_character_
+  ),
+  Lab_Level = case_when(
+    Q7 == 1 ~ 'Intro-Algebra',
+    Q7 == 2 ~ 'Intro-Calculus',
+    Q7 == 3 ~ 'Sophomore',
+    Q7 == 4 ~ 'Junior',
+    Q7 == 5 ~ 'Senior',
+    TRUE ~ NA_character_
+  ),
+  Where_Completed = case_when(
+    Q44 == 1 ~ 'In Class/Lab',
+    Q44 == 2 ~ 'At Home',
+    TRUE ~ NA_character_
+  ),
+  N_Students = Q8,
+  School = case_when(
+    Q4 == 'UBC' ~ 'University of British Columbia',
+    Q4 == 'University of Maine Orono' ~ 'University of Maine',
+    Q4 == 'University of Maine, Orono' ~ 'University of Maine',
+    Q4 == '1971' ~ 'CSU Chico',
+    TRUE ~ as.character(Q4)),
+  Institution_Type = case_when(
+    Q19 == 1 ~ '2 year college',
+    Q19 == 2 ~ '4 year college',
+    Q19 == 3 ~ "Master's granting institution",
+    Q19 == 4 ~ 'PhD granting institution',
+    Q17 == 1 ~ 'Cole needs to input this info manually',
+    TRUE ~ NA_character_
+  ),
+  Lab_Purpose = case_when(
+    Q27 == 1 ~ 'Reinforce physics concepts',
+    Q27 == 2 ~ 'Develop lab skills',
+    Q27 == 3 ~ 'Both about equally',
+    Q17 == 1 ~ 'Cole needs to input this info manually',
+    TRUE ~ NA_character_
+  )) %>%
+  select(V1, Semester, Lab_Level, Where_Completed, N_Students, School, Institution_Type, Lab_Purpose)
+
+df2 <- merge(df, df_CIS_cleaned, by.x = 'Class_ID', by.y = 'V1') %>%
+  distinct(V1_x, V1_y, .keep_all = TRUE)
+
+nrow(df2)
+```
+
+# CIS mutating and merging with main data and school and course information
+```{r}
+CTLabs <- c('R_6rq9bCkfvLDJEdz', 'R_3fNprNmbwV9C4X0', 'R_2R8MnTyv2jFgPzA', 'R_1IB300CxBKh0Tw7', 'R_1n7wUeClpEuZOkp')
+
+# Check 1116 from Fall 2017 where half of the class fell into each lab
+
+Pre1116_Intervention_IDS <-read.xlsx('C:/Users/Cole/Documents/GRA_Summer2018/Surveys/Fall2017/PRE/Fall2017_Cornell_University_1116_Smith_PRE_R_1Oko8BpPfb9rt0G_180202_I.xlsx', sheetIndex = 1) %>%
+  filter(Intervention == 1) %>%
+  select(V1)
+
+Post1116_Intervention_IDS <-read.xlsx('C:/Users/Cole/Documents/GRA_Summer2018/Surveys/Fall2017/POST/Fall2017_Cornell_University_1116_Smith_POST_R_1Oko8BpPfb9rt0G_180202_I.xlsx', sheetIndex = 1) %>%
+  filter(Intervention == 1) %>%
+  select(V1)
+
+df_cleaned <- df2 %>%
+  mutate(Lab = ifelse(Class_ID %in% CTLabs, 'Critical Thinking', 'Other'),
+         Gender = case_when(
+           Q6e_1_y == 1 ~ 'M',
+           Q6e_2_y == 1 ~ 'F',
+           Q6e_3_y == 1 ~ 'Other',
+           Q6e_1_x == 1 ~ 'M',
+           Q6e_2_x == 1 ~ 'F',
+           Q6e_3_x == 1 ~ 'Other'
+           ),
+         Major = case_when(
+           Q6b_y < 4 ~ 'Physics',
+           Q6b.i_y == 1 ~ 'Engineering',
+           Q6b.i_y == 2 | Q6b.i_y == 3 ~ 'Other Science',
+           Q6b.i_y == 4 ~ 'Other',
+           Q6b_x < 4 ~ 'Physics',
+           Q6b.i_x == 1 ~ 'Engineering',
+           Q6b.i_x == 2 | Q6b.i_x == 3 ~ 'Other Science',
+           Q6b.i_x == 4 ~ 'Other'
+           ),
+         Ethnicity = case_when(
+           Q6f_2_y == 1 ~ 'Asian/Asian American',
+           Q6f_6_y == 1 ~ 'White/Caucasian',
+           Q6f_1_y == 1 ~ 'American Indian/Alaska Native',
+           Q6f_3_y == 1 ~ 'African American',
+           Q6f_4_y == 1 ~ 'Hispanic/Latino',
+           Q6f_5_y == 1 ~ 'Native Hawaiian/Pacific Islander',
+           Q6f_7_y == 1 ~ 'Other',
+           Q6f_2_x == 1 ~ 'Asian/Asian American',
+           Q6f_6_x == 1 ~ 'White/Caucasian',
+           Q6f_1_x == 1 ~ 'American Indian/Alaska Native',
+           Q6f_3_x == 1 ~ 'African American',
+           Q6f_4_x == 1 ~ 'Hispanic/Latino',
+           Q6f_5_x == 1 ~ 'Native Hawaiian/Pacific Islander',
+           Q6f_7_x == 1 ~ 'Other'
+           ))
+
+df_cleaned$Lab[df2$V1_x %in% Pre1116_Intervention_IDS$V1] <- 'Critical Thinking'
+df_cleaned$Lab[df2$V1_y %in% Post1116_Intervention_IDS$V1] <- 'Critical Thinking'
+
+print('Number of distinct classes...')
+length(unique(df_cleaned$Class_ID))
+print('Number of unique schools...')
+length(unique(df_cleaned$School))
+
+df_cleaned %>%
+  distinct(Class_ID, .keep_all = TRUE) %>%
+  count(Institution_Type, Lab_Level)
+
+df_cleaned$Survey_x[is.na(df_cleaned$Survey_x)] = 'F'
+df_cleaned$Survey_y[is.na(df_cleaned$Survey_y)] = 'F'
+df_cleaned$N_Students <- droplevels(df_cleaned$N_Students)
+df_cleaned$N_Students <- as.numeric(levels(df_cleaned$N_Students))[df_cleaned$N_Students]
+
+df_cleaned[df_cleaned$Survey_x == 'F', 'PreScores'] <- NA
+df_cleaned[df_cleaned$Survey_y == 'F', 'PostScores'] <- NA
+
+df_cleaned[(df_cleaned$Qt1_3_x < 30) & (df_cleaned$Qt2_3_x < 30) & (df_cleaned$Qt3_3_x < 30) & (df_cleaned$Qt4_3_x < 30) & (!is.na(df_cleaned$PreScores)) , 'PreScores'] <- NA
+df_cleaned[(df_cleaned$Qt1_3_y < 30) & (df_cleaned$Qt2_3_y < 30) & (df_cleaned$Qt3_3_y < 30) & (df_cleaned$Qt4_3_y < 30) & (!is.na(df_cleaned$PostScores)), 'PostScores'] <- NA
+```
+
+# Second data cleaning
+```{r}
+df_cleaned <- df_cleaned %>%
+  #filter(Lab_Level != 'Intro-Algebra') %>%
+  mutate(Lab_Level = case_when(
+    Lab_Level == 'Intro-Algebra' ~ 'FY',
+    Lab_Level == 'Intro-Calculus' ~ 'FY',
+    #Lab_Level == 'Junior' ~ 'Advanced',
+    #Lab_Level == 'Senior' ~ 'Advanced',
+    #TRUE ~ 'Sophomore'
+    TRUE ~ 'BFY'
+  ))
+```
+
+
+# Subset for imputation
+```{r}
+df_subset <- df_cleaned %>%
+  filter((!is.na(PreScores)) | (!is.na(PostScores))) %>%
+  select(PreScores, PostScores, Lab, Lab_Level)
+
+table(df_subset$Lab_Level)
+table(df_subset$Lab, df_subset$Lab_Level)
+nrow(df_subset)
+```
+
+```{r include=FALSE}
+md.pattern(df_subset)
+
+NumIts <- round((sum(is.na(df_subset$PreScores)) + sum(is.na(df_subset$PostScores)))/(2 * nrow(df_subset)) * 100)
+
+NumIts
+
+df_Experts <- read.xlsx('C:/Users/Cole/Documents/GRA_Summer2018/Surveys/Experts/Experts_11S.xlsx', sheetIndex = 1) %>%
+  mutate(PreScores = TotalScores,
+         PostScores = TotalScores,
+         Lab_Level = 'Experts',
+         Lab = 'Experts') %>%
+  select(PreScores, PostScores, Lab_Level, Lab)
+
+df_subset <- rbind(df_subset, df_Experts)
+
+imputed_Data <- mice(df_subset, m = NumIts, maxit = 50, method = 'pmm', seed = 500)
+
+complete_Data <- mice::complete(imputed_Data, "long", include = FALSE)
+
+plot(imputed_Data)
+```
+
+# Function for imputed degrees of freedom
+```{r}
+imputed_DegreesOfFreedom = function(mat, n, k) {
+  U_bar <- mean(mat[,2])
+  B <- sd(mat[,1])^2
+  m <- nrow(mat)
+  TotVar <- U_bar + (1 + (1/m))* B
+  
+  lambda <- (B + (B/m))/TotVar
+  nu_old <- (m - 1)/lambda^2  
+  nu_com <- n - k
+  nu_obs <- (nu_com + 1)/(nu_com + 3) * nu_com * (1 - lambda)
+  nu_BR <- nu_old * nu_obs/(nu_old + nu_obs)
+  return(nu_BR)
+}
+```
+
+
+# Visulize Data
+```{r}
+ggplot(complete_Data, aes(x = PreScores)) +
+  geom_density()
+
+ggplot(complete_Data, aes(x = PostScores)) +
+  geom_density()
+
+ggplot(complete_Data, aes(x = PreScores, colour = Lab_Level)) +
+  geom_density()
+
+ggplot(complete_Data, aes(x = PostScores, colour = Lab_Level)) +
+  geom_density()
+
+FYOnly = complete_Data[complete_Data$Lab_Level == "FY", ]
+
+ggplot(FYOnly, aes(x = PreScores, colour = Lab)) +
+  geom_density()
+
+ggplot(FYOnly, aes(x = PostScores, colour = Lab)) +
+  geom_density()
+  
+```
+
+
+# Average Question and Total Scores (using question imputed data)
+```{r}
+complete_Data_wTotal <- complete_Data %>%
+  mutate(PreScores = rowSums(.[, Pre_cols]),
+         PostScores = rowSums(.[, Post_cols]))
+
+Imputations_means <- complete_Data_wTotal %>%
+  group_by(.imp) %>%
+  select(c('.imp', Pre_cols, 'PreScores', Post_cols, 'PostScores')) %>%
+  summarize_all('mean')
+
+colMeans(Imputations_means)
+
+
+Imputations_sds <- complete_Data_wTotal %>%
+  group_by(.imp) %>%
+  select(c('.imp', Pre_cols, 'PreScores', Post_cols, 'PostScores')) %>%
+  summarize_all(funs(sd(.)/sqrt(n())))
+
+for (Q in Pre_cols) {
+  print(Q)
+  print(by(complete_Data_wTotal, complete_Data_wTotal$.imp, function(x) {cor(x[, Q], x$PreScores)}))
+}
+
+
+cor(df_Pre)[, 'TotalScores']
+cor(df_Post)[, 'TotalScores']
+Corr_Matrix <- cor(df)[, 'TotalScores']
+```
+
+
+
+# Average Pre and Post Scores
+```{r}
+Imputations <- complete_Data %>%
+  filter(Lab_Level != 'Experts') %>%
+  group_by(.imp) %>%
+  summarize(Pre_MeanScores = mean(PreScores),
+            Post_MeanScores = mean(PostScores),
+            Pre_SE = sd(PreScores)/sqrt(n()),
+            Post_SE = sd(PreScores)/sqrt(n()))
+
+Means <- Imputations[, c("Pre_MeanScores", "Post_MeanScores")]
+SEs <- Imputations[, c("Pre_SE", "Post_SE")]
+Pooled <- mi.meld(Means, SEs)
+Pooled$se.mi <- 1.96 * Pooled$se.mi
+Pooled
+```
+
+# Function for summary table of pre/post comparisons
+```{r}
+PrePost_ImputedSummary = function(df_Imp) {
+
+  df_Imp_Summary <- df_Imp %>%
+    group_by(.imp) %>%
+    summarize(Pre_MeanScores = mean(PreScores),
+            Post_MeanScores = mean(PostScores),
+            Pre_SE = sd(PreScores)/sqrt(n()),
+            Post_SE = sd(PreScores)/sqrt(n()))
+    
+  Means <- mi.meld(df_Imp_Summary[, c("Pre_MeanScores", "Post_MeanScores")], df_Imp_Summary[, c("Pre_SE", "Post_SE")])
+  Means$se.mi <- 1.96 * Means$se.mi
+  
+  T_Summary <- ddply(df_Imp, .(.imp), function(x) tidy(t.test(x$PreScores, x$PostScores, paired = TRUE))[, c('estimate', 'conf.low', 'conf.high')]) %>%
+    mutate(SE = (conf.high - conf.low)/3.92) %>%
+    select(estimate, SE)
+  
+  DF <- imputed_DegreesOfFreedom(T_Summary, nrow(df_Imp)/nrow(df_Imp_Summary), 1)
+  
+  T_Pooled <- mi.meld(as.matrix(T_Summary$estimate), as.matrix(T_Summary$SE))
+  P_value <- pt(q = abs(T_Pooled$q.mi / T_Pooled$se.mi), df = DF, lower.tail = FALSE) * 2
+  T_stat <- abs(T_Pooled$q.mi / T_Pooled$se.mi)
+  
+  Effect_Summary <- ddply(df_Imp, .(.imp), function(x) data.frame(as.list(unlist(effsize::cohen.d(x$PreScores, x$PostScores, paired = TRUE))[c('estimate', 'conf.int.inf', 'conf.int.sup')]))) %>%
+    transform(estimate = as.numeric(levels(estimate))[estimate], conf.int.inf = as.numeric(levels(conf.int.inf))[conf.int.inf], conf.int.sup = as.numeric(levels(conf.int.sup))[conf.int.sup]) %>%
+    mutate(SE = (conf.int.sup - conf.int.inf)/3.92) %>%
+    select(estimate, SE)
+  colnames(Effect_Summary) <- c('Cohen.d', 'SE')
+  d_Pooled <- mi.meld(as.matrix(Effect_Summary$Cohen.d), as.matrix(Effect_Summary$SE))
+  d_Pooled$se.mi <- 1.96 * d_Pooled$se.mi
+  
+  Summary_df <- data.frame(Pre_Mean = as.numeric(Means$q.mi[, 'Pre_MeanScores']), Pre_95 = as.numeric(Means$se.mi[, 'Pre_SE']), Post_Mean = as.numeric(Means$q.mi[, 'Post_MeanScores']), Post_95 = as.numeric(Means$se.mi[, 'Post_SE']), p.value = P_value[1], T.stat = T_stat[1], Cohen.d = abs(d_Pooled$q.mi[1]))
+  
+  return(Summary_df)
+}
+```
+
+# Pre-post differences in imputed data
+```{r}
+PrePost_ImputedSummary(complete_Data)
+```
+
+
+# Level Differences
+```{r}
+table(df_subset$Lab_Level)
+
+FY_Imputed <- complete_Data %>%
+  filter(Lab_Level == 'FY')
+
+PrePost_ImputedSummary(FY_Imputed)
+
+BFY_Imputed <- complete_Data %>%
+  filter(Lab_Level == 'BFY')
+
+PrePost_ImputedSummary(BFY_Imputed)
+```
+
+# Imputed unpaired t-test function
+```{r}
+Unpaired_Imputed_t_test = function(df_Imp1, df_Imp2, var1, var2) {
+
+  df <- rbind(df_Imp1, df_Imp2)
+  
+  T_Summary <- ddply(df, .(.imp), function(x) tidy(t.test(x[, var1] ~ x [, var2]))[, c('estimate', 'conf.low', 'conf.high')]) %>%
+    mutate(SE = (conf.high - conf.low)/3.92) %>%
+    select(estimate, SE)
+  
+  DF <- imputed_DegreesOfFreedom(T_Summary, nrow(df)/nrow(T_Summary), 2)
+  
+  T_Pooled <- mi.meld(as.matrix(T_Summary$estimate), as.matrix(T_Summary$SE))
+  P_value <- pt(q = abs(T_Pooled$q.mi / T_Pooled$se.mi), df = DF, lower.tail = FALSE) * 2
+  T_stat <- abs(T_Pooled$q.mi / T_Pooled$se.mi)
+  
+  estimator <- paste('estimate.', levels(as.factor(df[, var2]))[1], sep = '')
+  Effect_Summary <- ddply(df, .(.imp), function(x) data.frame(as.list(unlist(effsize::cohen.d(x[, var1] ~ x[, var2]))[c(estimator, 'conf.int.inf', 'conf.int.sup')])))
+  
+  Effect_Summary[, estimator] = as.numeric(levels(Effect_Summary[, estimator]))[Effect_Summary[, estimator]]
+  
+  Effect_Summary2 <- Effect_Summary %>%
+    transform(conf.int.inf = as.numeric(levels(conf.int.inf))[conf.int.inf], conf.int.sup = as.numeric(levels(conf.int.sup))[conf.int.sup]) %>%
+    mutate(SE = (conf.int.sup - conf.int.inf)/3.92) %>%
+    select(estimator, SE)
+  colnames(Effect_Summary2) <- c('Cohen.d', 'SE')
+  d_Pooled <- mi.meld(as.matrix(Effect_Summary2$Cohen.d), as.matrix(Effect_Summary2$SE))
+  d_Pooled$se.mi <- 1.96 * d_Pooled$se.mi
+  
+  Summary_df <- data.frame(p.value = P_value[1], T.stat = T_stat[1], Cohen.d = abs(d_Pooled$q.mi[1]), df = DF)
+  
+  return(Summary_df)
+}
+```
+
+# Compare pre-scores across lab levels...and Experts
+```{r}
+df_FY <- complete_Data %>%
+  filter(Lab_Level == 'FY') %>%
+  select(.imp, Lab_Level, PreScores)
+
+df_BFY <- complete_Data %>%
+  filter(Lab_Level == 'BFY') %>%
+  select(.imp, Lab_Level, PreScores)
+
+Unpaired_Imputed_t_test(df_FY, df_BFY, var1 = 'PreScores', var2 = 'Lab_Level')
+
+NumImps = 27
+for(i in 1:NumImps) {
+  df_Experts_new <- data.frame(.imp = i, Lab_Level = 'Expert', PreScores = df_Experts$TotalScores)
+  if(i == 1) {
+    df_Experts_tot <- df_Experts_new
+  }
+  else{
+    df_Experts_tot <- rbind(df_Experts_tot, df_Experts_new)
+  }
+}
+
+mi.anova(imputed_Data, formula = "PreScores ~ Lab_Level")
+
+Unpaired_Imputed_t_test(df_FY, df_Experts_tot, var1 = 'PreScores', var2 = 'Lab_Level')
+Unpaired_Imputed_t_test(df_BFY, df_Experts_tot, var1 = 'PreScores', var2 = 'Lab_Level')
+```
+
+
+# Lab Differences
+```{r}
+table(df_subset$Lab, df_subset$Lab_Level)
+
+fit <- with(data = imputed_Data, exp = lm(PostScores ~ PreScores + factor(Lab), subset = (Lab_Level == 'FY')))
+Result <- summary(pool(fit))
+Result$confint95 <- 1.96 * Result$std.error
+Result
+```
+
+
+# Compare matched and imputed datasets
+```{r}
+df_Matched <- df_cleaned %>%
+  filter(!is.na(PreScores) & !is.na(PostScores)) %>%
+  select(PreScores, PostScores)
+
+df_Pre <- df_cleaned %>%
+  filter(!is.na(PreScores)) %>%
+  select(PreScores)
+
+df_Post <- df_cleaned %>%
+  filter(!is.na(PostScores)) %>%
+  select(PostScores)
+
+nrow(df_Matched)
+nrow(df_Pre)
+nrow(df_Post)
+
+NumImps = 27
+for(i in 1:NumImps) {
+  df_Matched_new <- data.frame(.imp = i, Imputed = 0, PreScores = df_Matched$PreScores, PostScores = df_Matched$PostScores)
+  df_Pre_new <- data.frame(.imp = i, Imputed = 0, PreScores = df_Pre$PreScores)
+  df_Post_new <- data.frame(.imp = i, Imputed = 0, PostScores = df_Post$PostScores)
+  if(i == 1) {
+    df_Matched_tot <- df_Matched_new
+    df_Pre_tot <- df_Pre_new
+    df_Post_tot <- df_Post_new
+  }
+  else{
+    df_Matched_tot <- rbind(df_Matched_tot, df_Matched_new)
+    df_Pre_tot <- rbind(df_Pre_tot, df_Pre_new)
+    df_Post_tot <- rbind(df_Post_tot, df_Post_new)
+  }
+}
+
+complete_Data$Imputed = 1
+Imp_Data <- complete_Data %>%
+  select(.imp, Imputed, PreScores, PostScores)
+
+data.frame(Matched_Pre_mean = mean(df_Matched$PreScores), Matched_Pre_SE95 = 1.96 * sd(df_Matched$PreScores)/sqrt(nrow(df_Matched)), Matched_Post_mean = mean(df_Matched$PostScores), Matched_Post_SE95 = 1.96 * sd(df_Matched$PostScores)/sqrt(nrow(df_Matched)), N_Matched = nrow(df_Matched), All_Pre_mean = mean(df_Pre$PreScores), All_Pre_SE95 = 1.96 * sd(df_Pre$PreScores)/sqrt(nrow(df_Pre)), N_Pre = nrow(df_Pre), All_Post_mean = mean(df_Post$PostScores), All_Post_SE95 = 1.96 * sd(df_Post$PostScores)/sqrt(nrow(df_Post)), N_Post = nrow(df_Post))
+
+Unpaired_Imputed_t_test(Imp_Data, df_Matched_tot, var1 = 'PreScores', var2 = 'Imputed')
+Unpaired_Imputed_t_test(Imp_Data, df_Matched_tot, var1 = 'PostScores', var2 = 'Imputed')
+Unpaired_Imputed_t_test(Imp_Data[, c('.imp', 'Imputed', 'PreScores')], df_Pre_tot, var1 = 'PreScores', var2 = 'Imputed')
+Unpaired_Imputed_t_test(Imp_Data[, c('.imp', 'Imputed', 'PostScores')], df_Post_tot, var1 = 'PostScores', var2 = 'Imputed')
+t.test(df_Matched$PostScores, df_Post$PostScores)
+effsize::cohen.d(df_Matched$PostScores, df_Post$PostScores)
+
+```
+
+

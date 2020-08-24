@@ -1,0 +1,382 @@
+# Load necessary packages
+```{r, results = 'hide', message = FALSE, warning = FALSE}
+library(ltm)
+library(tidyverse)
+library(data.table)
+library(BlandAltmanLeh)
+library(lmerTest)
+library(sjstats)
+library(lavaan)
+library(semPlot)
+library(ggpubr)
+library(psych)
+source('C:/Users/Cole/Documents/GitHub/PLIC/Process-Merge-Concat/PLIC_DataProcessing.R')
+theme_set(theme_classic(base_size = 14))
+```
+
+# Read and get institution/course/class breakdowns
+```{r}
+full.df <- fread('C:/Users/Cole/Documents/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
+  filter(Survey_x == 'C' | Survey_y == 'C') # remove events with no CR surveys
+
+# Remove FR scores
+full.df[full.df$Survey_x == 'F', 'PreScores'] <- NA_real_
+full.df[full.df$Survey_y == 'F', 'PostScores'] <- NA_real_
+
+print('Total # of students in dataset...')
+length(unique(full.df$anon_student_id))
+
+print('Total # of institutions in dataset..')
+length(unique(full.df$anon_institution_id))
+
+print('Total # of courses in dataset...')
+length(unique(full.df$anon_course_id))
+
+print('Total # of courses in dataset...')
+length(unique(full.df$Class_ID))
+
+# Examine only unique institutions/courses
+table(full.df[!duplicated(full.df$anon_institution_id),]$Institution_type, exclude = NULL)
+table(full.df[!duplicated(full.df$anon_course_id),]$Lab_level, exclude = NULL)
+table(full.df[!duplicated(full.df$Class_ID),]$Lab_level, exclude = NULL)
+```
+
+# Student demographics
+```{r}
+full.df <- Collapse.vars(full.df) # Creates new gender/race/major columns
+# Get df of only unique students
+distinct.df <- full.df[!duplicated(full.df$anon_student_id),]
+
+# Get demographic breakdown of distinct datasets
+table(distinct.df$Gender)/nrow(distinct.df) * 100
+Race.ethnicity.table(distinct.df)
+table(distinct.df$Major)/nrow(distinct.df) * 100
+
+print('Total # of student records in dataset...')
+nrow(full.df)
+
+print('# of students that took the PLIC in two or more classes...')
+length(unique(full.df[duplicated(full.df$anon_student_id), 'anon_student_id']))
+```
+
+# Overall distribution
+```{r}
+print('Number of pretests...')
+sum(!is.na(full.df$PreScores))
+print('Number of posttests...')
+sum(!is.na(full.df$PostScores))
+
+ggplot(full.df[, c('PreScores', 'PostScores')] %>%
+         `colnames<-`(c('PRE', 'POST')) %>%
+         melt(variable.name = 'Test', value.name = 'Score'), aes(x = Score, group = Test, 
+                                                                 fill = Test)) +
+  geom_density(alpha = 0.4) +
+  scale_fill_manual(values = c('#d95f02', '#7570b3'))
+```
+
+# Item difficulty
+```{r}
+# create long form data with average item scores (unmatched) with standard errors
+Question.stats <- function(df, test){
+  if(test == 'PRE'){
+    df.q <- df[!is.na(df$PreScores), colnames(df)[colnames(df) %like% 's_x']]
+  } else {
+    df.q <- df[!is.na(df$PostScores), colnames(df)[colnames(df) %like% 's_y']]
+  }
+  df.q <- df.q %>%
+  melt(variable.name = 'Item', value.name = 'Score') %>%
+  group_by(Item) %>%
+  summarize(Average = mean(Score, na.rm = TRUE), SE = sd(Score, na.rm = TRUE)/sqrt(n()), 
+            N = n()) %>% # get summary statistics
+  rowwise() %>%
+  mutate(Item = substr(Item, 1, 3), # get rid of the suffix of the item names
+         Test = test) # add test (i.e., pre/post) distinction
+}
+
+df.q <- rbind(Question.stats(full.df, 'PRE'), Question.stats(full.df, 'POST')) %>%
+  mutate(Test = factor(Test, levels = c('PRE', 'POST')))
+
+min(df.q$Average)
+max(df.q$Average)
+
+ggplot(df.q, aes(x = Item, y = Average, group = Test, color = Test, shape = Test)) +
+  geom_point(size = 4) +
+  scale_color_manual(values = c('#d95f02', '#7570b3')) +
+  labs(y = 'Item difficulty')
+```
+
+# Item discrimination
+```{r}
+compute.discrimination.correlation <- function(df, test, type = 'discrimination'){
+  if(test != 'Both'){
+      if(type == 'discrimination'){
+        df$quartile <- as.integer(cut(df[, paste(test, 'Scores', sep = '')],
+                                      quantile(df[, paste(test, 'Scores', sep = '')],
+                                               na.rm = TRUE), include.lowest = TRUE)) 
+      }
+      
+      if(test == 'Pre'){
+        if(type == 'correlation'){
+          return(cor(df[, c('PreScores', colnames(df)[colnames(df) %like% 's_x'])], 
+                     use = 'complete.obs')[1,])
+        }
+        df.quartile <- df %>%
+          select(quartile, colnames(df)[colnames(df) %like% 's_x'])
+      } else {
+        if(type == 'correlation'){
+          return(cor(df[, c('PostScores', colnames(df)[colnames(df) %like% 's_y'])], 
+                     use = 'complete.obs')[1,])
+        }
+          df.quartile <- df %>%
+            select(quartile, colnames(df)[colnames(df) %like% 's_y']) 
+      }
+  } else {
+    Items <- c('Q1B', 'Q1D', 'Q1E', 'Q2B', 'Q2D', 'Q2E', 'Q3B', 'Q3D', 'Q3E', 'Q4B')
+    
+    df.quartile <- rbind(df[, c("PreScores", 
+                                colnames(df)[colnames(df) %like% 's_x'])] %>%
+                           `colnames<-`(c('Score', Items)), 
+                         df[, c("PostScores", 
+                                colnames(df)[colnames(df) %like% 's_y'])] %>%
+                           `colnames<-`(c('Score', Items))) %>%
+      filter(!is.na(Score))
+    
+      if(type == 'correlation'){
+        return(cor(df.quartile, use = 'complete.obs')[1,])
+      }
+    
+    df.quartile$quartile <- as.integer(cut(df.quartile[, 'Score'], 
+                                           quantile(df.quartile[, 'Score'], 
+                                                    na.rm = TRUE), include.lowest = TRUE))
+    df.quartile <- df.quartile %>%
+      select(-Score)
+  }
+  
+  df.quartile <- df.quartile %>%
+    group_by(quartile) %>%
+    summarize_all('mean')
+  
+  D = df.quartile[df.quartile$quartile == 4, ] - df.quartile[df.quartile$quartile == 1, ]
+      
+  return(D[1, 2:ncol(D)])
+  
+}
+
+compute.discrimination.correlation(full.df, 'Pre')
+compute.discrimination.correlation(full.df, 'Post')
+compute.discrimination.correlation(full.df, 'Both')
+```
+
+# Item-test correlations
+```{r}
+compute.discrimination.correlation(full.df, 'Pre', 'correlation')
+compute.discrimination.correlation(full.df, 'Post', 'correlation')
+compute.discrimination.correlation(full.df, 'Both', 'correlation')
+```
+
+# Internal reliability
+```{r}
+Items <- c('Q1B', 'Q1D', 'Q1E', 'Q2B', 'Q2D', 'Q2E', 'Q3B', 'Q3D', 'Q3E', 'Q4B')
+fa.df <- rbind(full.df[, c("PreScores", 
+                           colnames(full.df)[colnames(full.df) %like% 's_x'])] %>%
+                 `colnames<-`(c('Score', Items)), 
+               full.df[, c("PostScores", 
+                           colnames(full.df)[colnames(full.df) %like% 's_y'])] %>%
+                 `colnames<-`(c('Score', Items))) %>%
+  filter(!is.na(Score)) %>%
+  select(-Score)
+
+cronbach.alpha(fa.df, standardized = TRUE)
+cor(fa.df)
+
+set.seed(11)
+inds <- sample(seq_len(nrow(fa.df)), size = nrow(fa.df)/2)
+train.df <- fa.df[inds,]
+
+fa.parallel(train.df)
+fa(train.df, 1)
+fa(train.df, 2)
+fa(train.df, 3)
+fa(train.df, 4)
+# fa.diagram(fit)
+
+# mod <- ' models  =~ Q1B + Q2B + Q3B + Q3D
+#   methods =~ Q1D + Q2D + Q4B
+#   actions =~ Q1E + Q2E + Q3E '
+# 
+# CFA <- cfa(mod, fa.df, std.lv = TRUE, estimator = 'ML')
+# 
+# summary(CFA, fit.measures = TRUE, modindices = TRUE, standardized = TRUE)
+# resid(CFA)
+# semPaths(CFA, what = 'diagram', whatLabels = 'stand', layout = 'tree2', 
+#          residuals = FALSE, nCharNodes = 10, edge.color = 'black', edge.label.cex = 1.5, 
+#          curve = 2, label.scale = FALSE, 
+#          nodeLabels = c('Q1B', 'Q2B', 'Q3B', 'Q3D', 'Q1D', 'Q2D', 'Q4B', 'Q1E', 'Q2E', 
+#                         'Q3E', 'Evaluate\nModels', 'Evaluate\nMethods', 
+#                         'Suggest\nFollow-ups'), rotation = 2, sizeMan = 7, sizeMan2 = 6, 
+#          sizeLat = 16, mar = c(1, 6, 1, 2))
+```
+
+# Concurrent validity
+```{r}
+full.df %>%
+  filter(!is.na(PreScores)) %>%
+  group_by(Lab_level) %>%
+  summarize(N = n(), Avg = mean(PreScores), se = sd(PreScores)/sqrt(N))
+
+p <- ggplot(full.df[!is.na(full.df$PreScores),] %>%
+              mutate(Lab_level = factor(Lab_level, 
+                                        levels = c('HighSchool', 'Intro-Algebra',
+                                                   'Intro-Calculus', 'Sophomore', 
+                                                   'Junior', 'Senior'))), 
+            aes(x = Lab_level, y = PreScores, group = Lab_level, color = Lab_level))
+add_summary(p, fun = 'mean_se', group = c('Lab_level')) +
+  scale_color_manual(values = c('#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', 
+                                '#e6ab02')) +
+  scale_x_discrete(labels = c('High school', 'Intro (algebra)', 'Intro (calculus)', 'Sophomore', 'Junior', 'Senior/graduate')) +
+  theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust = 1),
+        legend.position = "none") +
+  labs(x = 'Course level', y = 'Average pretest score')
+
+#+
+ # geom_density(alpha = 0.4) #+
+  #scale_fill_manual(values = c('#d95f02', '#7570b3'))
+```
+
+
+# Student test-retest reliability
+```{r}
+# This dataframe contains valid surveys from students who took the PLIC two or more times
+# at the same time (i.e., pre or post) for the same class
+student.trt.df <- read.csv('C:/Users/Cole/Documents/PLIC_DATA/Collective_Surveys/DuplicatedSurveys.csv')
+
+print('# of students with more than one measurement')
+length(unique(student.trt.df$anon_student_id))
+
+# Remove records with scores less than two sds below the mean of this dataset
+cutoff <- mean(student.trt.df$TotalScores) - 2 * sd(student.trt.df$TotalScores)
+cutoff
+student.trt.df <- student.trt.df[student.trt.df$TotalScores > cutoff,]
+
+# Get finish date data
+student.trt.df$V4 <- as.POSIXct(as.character(student.trt.df$V4),
+                                format="%Y-%m-%d %H:%M:%S")
+
+# Remove students without 2 measurements. There was one student who took the PLIC four 
+# times at two separate times, so I removed them for simplicity
+student.trt.df <- as.data.table(student.trt.df)[, N.measures := .N, 
+                                             by = anon_student_id][N.measures == 2][,
+                                .(anon_student_id, TotalScores, V4, Q1Bs, Q1Ds, Q1Es, 
+                                  Q2Bs, Q2Ds, Q2Es, Q3Bs, Q3Ds, Q3Es, Q4Bs)]
+
+print('# of students with more than one measurement')
+length(unique(student.trt.df$anon_student_id))
+
+print('Intraclass correlation: percent variance explained by group structure...')
+r2(lmer(TotalScores ~ (1 | anon_student_id), student.trt.df))
+
+# Convert data to wide form
+student.trt.matched <- inner_join(student.trt.df, student.trt.df,
+                                  by = 'anon_student_id', suffix = c('.x', '.y')) %>%
+  mutate(abs.diff = abs(TotalScores.y - TotalScores.x)) %>%
+  filter((abs.diff != 0) & !duplicated(abs.diff)) %>%
+  select(-abs.diff)
+
+print('# of pairs of measurements')
+nrow(student.trt.matched)
+
+student.trt.matched$Time.between <- student.trt.matched$V4.y - student.trt.matched$V4.x
+print('Time between measurements...')
+median(as.numeric(student.trt.matched$Time.between), na.rm = TRUE)/60
+min(as.numeric(student.trt.matched$Time.between), na.rm = TRUE)
+max(as.numeric(student.trt.matched$Time.between), na.rm = TRUE)/(60 * 24)
+
+print('Correlation between two measurements...')
+cor.test(student.trt.matched$TotalScores.x, student.trt.matched$TotalScores.y)
+# cor.questions <- function(df, Q){
+#   print(Q)
+#   cor.test(df[, paste(Q, 'x', sep = '.')], df[, paste(Q, 'y', sep = '.')])
+# }
+# 
+# sapply(c('Q1Bs', 'Q1Ds', 'Q1Es', 'Q2Bs', 'Q2Ds', 
+#          'Q2Es', 'Q3Bs', 'Q3Ds', 'Q3Es', 'Q4Bs'), cor.questions, df = student.trt.matched)
+
+# Scatter plot of scores
+ggplot(student.trt.matched, aes(x = TotalScores.x, y = TotalScores.y)) +
+  geom_point() +
+  labs(x = 'First score', y = 'Second score')
+
+# theme_set(theme_classic(base_size = 13))
+# Bland-Altman plot comparing differences to baseline
+p <- bland.altman.plot(student.trt.matched$TotalScores.x, 
+                       student.trt.matched$TotalScores.y, graph.sys = 'ggplot2')
+print(p + labs(x = 'Mean score', y = 'First score - Second score'))
+```
+
+
+# Class reliability
+```{r}
+# Get aggregated class-level data, remove classes with less than five students
+class.pre.dt <- data.table(full.df)[, {N.students = sum(!is.na(PreScores))
+                                        avg.pre = mean(PreScores, na.rm = TRUE)
+                                        std.pre = sd(PreScores, 
+                                                     na.rm = TRUE)/sqrt(N.students)
+                                        list(N.students = N.students, avg.pre = avg.pre, 
+                                             std.pre = std.pre)}, 
+                                    .(Class_ID, 
+                                      anon_course_id)][!is.na(avg.pre) & (N.students > 5),
+                                                       N.courses := .N, 
+                                                       by = anon_course_id][N.courses > 1]
+
+print('# of courses with more than one class...')
+length(unique(class.pre.dt$anon_course_id))
+
+print('Intraclass correlation: percent variance explained by group structure...')
+r2(lmer(avg.pre ~ (1 | anon_course_id), class.pre.dt))
+
+# Convert to wide form
+class.pre.matched <- inner_join(class.pre.dt[, c('Class_ID', 'anon_course_id', 'avg.pre', 
+                                                 'std.pre')], 
+                                class.pre.dt[, c('Class_ID', 'anon_course_id', 'avg.pre', 
+                                                 'std.pre')], by = 'anon_course_id', 
+                                suffix = c('.x', '.y')) %>%
+  mutate(abs.diff = abs(avg.pre.y - avg.pre.x)) %>%
+  filter((Class_ID.x != Class_ID.y) & !duplicated(abs.diff)) %>%
+  select(-abs.diff)
+
+print('# of pairs of classes')
+nrow(class.pre.matched)
+
+print('Correlation between all pairs of classes from the same course')
+cor(class.pre.matched$avg.pre.x, class.pre.matched$avg.pre.y)
+
+# Scatter plot of pairs of average pretest scores
+ggplot(class.pre.matched, aes(x = avg.pre.x, y = avg.pre.y)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = avg.pre.y - std.pre.y, ymax = avg.pre.y + std.pre.y)) +
+  geom_errorbarh(aes(xmin = avg.pre.x - std.pre.x, xmax = avg.pre.x + std.pre.x)) +
+  labs(x = 'Mean pretest score of first class', y = 'Mean pretest score of second class')
+
+# Bland-Altman plot comparing differences to baseline
+p <- bland.altman.plot(class.pre.matched$avg.pre.x, 
+                       class.pre.matched$avg.pre.y, graph.sys = 'ggplot2')
+print(p + labs(x = 'Mean of measurements', y = 'Difference of measurements'))
+```
+
+# Contunous IRT
+```{r}
+#library(EstCRM)
+
+min.item <- rep(0, 10)
+max.item <- rep(1, 10)
+
+CRM <- EstCRMitem(full.df[!is.na(full.df$PostScores), 
+                          colnames(full.df)[colnames(full.df) %like% 's_y']], max.item,
+                  min.item, converge = 0.0005)
+CRM
+
+#plotCRM(CRM$param, 7, max.item, min.item)
+```
+
+
+
