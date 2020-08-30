@@ -5,28 +5,17 @@ output:
 ---
 # Load necessary packages
 ```{r, results = 'hide', message = FALSE, warning = FALSE}
-library(tidyverse)
-library(data.table)
-library(reshape2)
-library(ggpubr)
-library(lmerTest)
-library(reghelper)
-library(car)
-library(lattice)
-library(sjstats)
-library(sjPlot)
-library(gridExtra)
-library(stargazer)
-library(lavaan)
-library(semPlot)
-library(psych)
-theme_set(theme_classic(base_size = 14))
-source('C:/Users/Cole/Documents/GitHub/PLIC/Process-Merge-Concat/PLIC_DataProcessing.R')
+library(easypackages)
+libraries('tidyverse', 'data.table', 'reshape2', 'ggpubr', 'lmerTest', 'reghelper', 'car',
+          'lattice', 'sjstats', 'sjPlot', 'gridExtra', 'stargazer', 'lavaan', 'semPlot',
+          'psych', 'grid', 'semTools')
+theme_set(theme_classic(base_size = 12)) # set font size for ggplot
+source('C:/Users/Cole/Documents/GitHub/PLIC/Processing-Scripts/PLIC_DataProcessing.R')
 ```
 
 # Read and match
 ```{r}
-full.df <- fread('C:/Users/Cole/Documents/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
+full.df <- fread('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
   filter(Survey_x == 'C' | Survey_y == 'C')
 
 # Remove FR scores
@@ -219,108 +208,147 @@ stargazer(mod, mod, mod, mod, coef = list(summary(mod)$coefficients[, 1],
 # Marginal effects plots
 ```{r}
 # Main effect of lab goal
-p1 <- plot_model(mod, type = 'eff', terms = 'Lab_purpose', dot.size = 4, line.size = 1, 
-                 ci.lvl = 0.67, title = '', 
-                 axis.title = 'Predicted PLIC posttest scores', 
-                 colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
-  theme(legend.position = 'right') +
-  xlab('')
+p1 <- plot_model(mod, type = 'eff', terms = 'Lab_purpose', ci.lvl = 0.67)
 
-theme_set(theme_classic(base_size = 25))
-p1
-p1$data
+p1.new <- ggplot(data.frame(p1$data), aes(x = factor(x), y = predicted, 
+                                          color = factor(x))) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size = 1, width = 0,
+                position = position_dodge(width = 0.5)) +
+  scale_x_discrete(labels = c('Concepts-based', 'Mixed', 'Skills-based')) +
+  scale_color_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
+  labs(x = 'Lab type', y = 'Predicted PLIC posttest scores') +
+  theme(axis.text.x = element_text(angle = 40, vjust = 1, hjust = 1),
+        legend.position = 'none')
 
 # Effects of gender across lab goal
-p2 <- plot_model(mod, type = 'eff', terms = c('Gender', 'Lab_purpose'), dot.size = 4, 
+p2 <- plot_model(mod, type = 'eff', terms = c('Gender', 'Lab_purpose'), dot.size = 2, 
                  line.size = 1, ci.lvl = 0.67, title = '', 
-                 axis.title = 'Predicted PLIC posttest scores', 
+                 axis.title = '', 
                  colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
-  theme(legend.position = 'right') +
   scale_x_discrete(limits = c("Man", "Non-binary", "Woman", "Unknown")) +
-  labs(color = 'Lab purpose')
+  labs(x = 'Gender', y = '', color = 'Lab type') +
+  theme(legend.position = 'top')
 
 p2.new <- p2
-p2.new$data$group <- factor(p2.new$data$group, levels = c("Concepts-based", "Mixed", "Skills-based"))
 p2.new$data$x <- rep(c(1, 2, 4, 3), 3)
-p2.new
+
+get_legend <- function(myggplot){
+  # from http://www.sthda.com/english/wiki/wiki.php?id_contents=7930
+  tmp <- ggplot_gtable(ggplot_build(myggplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+
+leg <- get_legend(p2.new)
+p2.new <- p2.new + theme(legend.position = 'none',
+                         axis.text.x = element_text(angle = 40, vjust = 1, hjust = 1),
+                         plot.margin = unit(c(0, 0, 0, -0.5), 'cm'))
 ```
 
 # Race/ethnicity marginal effects plots
 ```{r}
 p3.other <- plot_model(mod, type = 'eff', terms = c('Race.ethnicity.Other [1]', 
-                                                      'Lab_purpose'))
+                                                      'Lab_purpose'), ci.lvl = 0.67)
 df.race.eff <- data.frame(p3.other$data) %>%
   mutate(race.ethnicity = 'Race.ethnicity.Other')
 for(race in c('Race.ethnicity.AmInd', 'Race.ethnicity.Asian', 'Race.ethnicity.Black', 
               'Race.ethnicity.Hispanic', 'Race.ethnicity.NatHawaii', 
               'Race.ethnicity.White')){
   p3 <- plot_model(mod, type = 'eff', terms = c(paste(race, ' [1]', sep = ''),
-                                                 'Lab_purpose'))
+                                                 'Lab_purpose'), ci.lvl = 0.67)
   df.race.eff <- rbind(df.race.eff, data.frame(p3$data) %>%
                          mutate(race.ethnicity = race))
 }
 
+# ...and clean up the dataframe a little bit
 df.race.eff <- df.race.eff %>%
-  mutate(group = factor(group, levels = c("Concepts-based", "Mixed", "Skills-based"),
-                        ordered = TRUE)) %>%
   rowwise() %>%
-  mutate(race.ethnicity = strsplit(race.ethnicity, '\\.')[[1]][3])
+  mutate(race.ethnicity = strsplit(race.ethnicity, '\\.')[[1]][3]) %>%
+  mutate(group = factor(group, levels = c('Concepts-based', 'Mixed', 'Skills-based'),
+                        ordered = TRUE),
+         race.ethnicity = case_when(
+           race.ethnicity == 'AmInd' ~ 'American Indian',
+           race.ethnicity == 'NatHawaii' ~ 'Native Hawaiian',
+           TRUE ~ race.ethnicity))
 
-ggplot(df.race.eff, aes(x = race.ethnicity, y = predicted, group = group, color = group)) +
-  geom_point(size = 4, position = position_dodge(width = 0.5)) +
+p3 <- ggplot(df.race.eff, aes(x = factor(race.ethnicity, 
+                                         levels = c('American Indian', 'Asian', 'Black',
+                                                    'Hispanic', 'Native Hawaiian', 
+                                                    'White', 'Other')), 
+                        y = predicted, group = group, color = group)) +
+  geom_point(size = 2, position = position_dodge(width = 0.5)) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size = 1, width = 0.2,
                 position = position_dodge(width = 0.5)) +
   scale_color_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
-  labs(x = 'Race/ethnicity', y = 'Predicted PLIC posttest scores', color = 'Lab purpose')
+  labs(x = 'Race/ethnicity', y = '') +
+  theme(axis.text.x = element_text(angle = 40, vjust = 1, hjust = 1),
+        legend.position = 'none',
+        plot.margin = unit(c(0, 0, 0, -0.5), 'cm'))
 ```
 
 ```{r}
-df.race.eff <- df.race.eff %>%
-  mutate(race.ethnicity = case_when(
-    race.ethnicity == 'AmInd' ~ 'American Indian',
-    race.ethnicity == 'NatHawaii' ~ 'Native Hawaiian',
-    TRUE ~ race.ethnicity
-  ),
-  var = 'Race/ethnicity')
-
-df.gender <- data.frame(p2.new$data) %>%
-  mutate(gender = case_when(
-    x == 1 ~ 'Man',
-    x == 2 ~ 'Non-binary',
-    x == 3 ~ 'Woman',
-    x == 4 ~ 'Unknown'
-  ),
-  var = 'Gender')
-
-cols <- c('x', 'predicted', 'std.error', 'conf.low', 'conf.high', 'lab', 'group', 'var')
-colnames(df.race.eff) <- cols
-colnames(df.gender) <- cols
-
-df.demos <- rbind(df.race.eff, df.gender)
-
-theme_set(theme_classic(base_size = 9))
-ggplot(df.demos, aes(x = factor(group, levels = c('Man', 'Non-binary', 'Woman', 
-                                                  'American Indian', 'Asian', 'Black',  
-                                                  'Hispanic', 'Native Hawaiian', 'White', 
-                                                  'Other', 'Unknown')), y = predicted, 
-                     group = lab, color = lab)) +
-  geom_point(size = 3, position = position_dodge(width = 0.7)) +
-  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size = 1, width = 0.2,
-                position = position_dodge(width = 0.7)) +
-  scale_color_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
-  labs(x = '', y = 'Predicted PLIC posttest scores', color = 'Lab type') +
-  facet_wrap(~var, scales = 'free_x') +
-  theme(legend.position = 'top') +
-  theme(axis.text.x = element_text(angle = 40, vjust = 1, hjust = 1))
+png('Figures/PLIC_Labtype_Demos.png', width = 586, height = 363)
+grobs = cbind(ggplotGrob(p1.new), ggplotGrob(p2.new), ggplotGrob(p3), size = "first")
+grid.arrange(leg, arrangeGrob(grobs), heights = c(1, 10))
+dev.off()
 ```
 
+# Process CIS items
 ```{r}
-df.matched[, names(df.matched) %like% "Q29|Q31"] <- 
-  data.frame(lapply(df.matched[, names(df.matched) %like% "Q29|Q31"], function(x) 
+df.matched[, names(df.matched) %like% "Q28|Q29|Q31"] <- 
+  data.frame(lapply(df.matched[, names(df.matched) %like% "Q28|Q29|Q31"], function(x) 
     droplevels(factor(as.vector(x), levels = c('1', '2', '3', '4', '5'), 
                       ordered = TRUE))))
 
-df.matched[, names(df.matched) %like% "Q29|Q31"] <- data.frame(lapply(df.matched[, names(df.matched) %like% "Q29|Q31"], function(x) as.numeric(x)))
+df.matched[, names(df.matched) %like% "Q28|Q29|Q31"] <- data.frame(lapply(df.matched[, names(df.matched) %like% "Q28|Q29|Q31"], function(x) as.numeric(x)))
+```
+
+# Run CFA on CIS
+```{r}
+mod <- '
+  agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q29_6 + Q28_1 + Q28_2 + Q28_3
+'
+
+# unique classes only
+CIS.df <- unique(df.matched[, names(df.matched) %like% "Q28|Q29|Q31"])
+
+fit <- cfa(mod, CIS.df)
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+semPaths(fit, whatLabels = 'std')
+resid(fit, type = 'cor')
+```
+
+# Run EFA on half of the dataset
+```{r}
+set.seed(11)
+inds <- sample(seq_len(nrow(CIS.df)), size = nrow(CIS.df)/2)
+CIS.train.df <- CIS.df[inds, names(CIS.df) %like% 'Q28|Q29']
+
+CIS.train.df
+
+fa.parallel(CIS.train.df)
+
+fit1 <- fa(CIS.train.df, 1)
+fit1
+fa.diagram(fit1)
+
+fit2 <- fa(CIS.train.df, 2)
+fit2
+fa.diagram(fit2)
+```
+
+# Run CFA on CIS with new model
+```{r}
+mod <- '
+  agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q28_1 + Q28_3
+'
+
+fit <- cfa(mod, CIS.df[-inds,])
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+semPaths(fit, whatLabels = 'std')
+resid(fit, type = 'cor')
 ```
 
 # SEM with fixed measurement model
@@ -334,30 +362,13 @@ mod.sem <- '
   level: 1
     PostScores ~ PreScores
   level: 2
-    decision =~ 1.0 * Q29_1 + 1.310 * Q29_2 + 1.122 * Q29_3 + 1.013 * Q29_4 + 0.807 * Q29_5 + 0.906 * Q31_6
-    #epistemic =~ 1.0 * Q31_1 + 0.990 * Q31_2 + 0.899 * Q31_4 + 0.593 * Q31_5
+    agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q28_1 + Q28_3
+    Q29_3 ~~ Q29_4 + Q29_5
+    Q29_4 ~~ Q29_5
 
-    #decision ~~ 0.241 * epistemic
-    #Q31_1 ~~ 0.131 * Q31_2 + -0.004 * Q31_3
-    #Q31_2 ~~ 0.165 * Q31_4
-    #Q31_3 ~~ 0.344 * Q31_4
-    Q29_1 ~~ 0.524 * Q29_1
-    Q29_2 ~~ 0.297 * Q29_2
-    Q29_3 ~~ 0.645 * Q29_3
-    Q29_4 ~~ 0.570 * Q29_4
-    Q29_5 ~~ 0.632 * Q29_5
-    Q31_6 ~~ 0.630 * Q31_6
-    #Q31_1 ~~ 0.379 * Q31_1
-    #Q31_2 ~~ 0.272 * Q31_2
-    #Q31_4 ~~ 0.532 * Q31_4
-    #Q31_5 ~~ 0.561 * Q31_5
-    decision ~~ 0.556 * decision
-    #epistemic ~~ 0.534 * epistemic
+    type.investigation ~ Lab.goal.skills + Lab.goal.both
 
-    decision ~ Lab.goal.skills + Lab.goal.both
-    #epistemic ~ Lab.goal.skills + Lab.goal.both
-
-    PostScores ~ decision + Lab.goal.skills + Lab.goal.both
+    PostScores ~ agency + Lab.goal.skills + Lab.goal.both
 '
 
 fit <- sem(mod.sem, data = df.matched, cluster = "Class_ID")
@@ -366,48 +377,8 @@ standardizedsolution(fit)
 resid(fit, type = 'cor')
 ```
 
-# Compare to null model
+# Check null model
 ```{r}
-library(semTools)
 nullRMSEA(fit)
 ```
 
-```{r}
-df.matched[, names(df.matched) %like% "Q29|Q31"] <- 
-  data.frame(lapply(df.matched[, names(df.matched) %like% "Q29|Q31"], function(x) 
-    droplevels(factor(as.vector(x), levels = c('1', '2', '3', '4', '5'), 
-                      ordered = TRUE))))
-
-df.matched[, names(df.matched) %like% "Q29|Q31"] <- data.frame(lapply(df.matched[, names(df.matched) %like% "Q29|Q31"], function(x) as.numeric(x)))
-```
-
-# SEM with fixed measurement model
-```{r}
-df.matched <- df.matched %>%
-  mutate(Lab.goal.skills = 1 * (Lab_purpose == 'Skills-based'),
-         Lab.goal.both = 1 * (Lab_purpose == 'Mixed'),
-         Lab.goal.concepts = 1 * (Lab_purpose == 'Concepts-based'),
-         Lab.level.FYAlg = 1 * (Lab_level == 'FY-Alg'),
-         Lab.level.FYCal = 1 * (Lab_level == 'FY-Calculus'),
-         Lab.level.BFY = 1 * (Lab_level == 'BFY'))
-
-mod.sem <- '
-  level: 1
-    PostScores ~ PreScores
-  level: 2
-    decision =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q31_6
-    #epistemic =~ Q31_1 + Q31_2 + Q31_4 + Q31_5
-
-    #decision ~~ epistemic
-
-    decision ~ Lab.goal.skills + Lab.goal.both
-    #epistemic ~ Lab.goal.skills + Lab.goal.both
-
-    PostScores ~ decision + Lab.goal.skills + Lab.goal.both
-'
-
-fit <- sem(mod.sem, data = df.matched, cluster = "Class_ID")
-summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
-standardizedsolution(fit)
-resid(fit, type = 'cor')
-```

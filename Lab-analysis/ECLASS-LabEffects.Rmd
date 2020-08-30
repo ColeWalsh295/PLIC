@@ -8,8 +8,8 @@ output:
 library(easypackages)
 libraries('tidyverse', 'data.table', 'reshape2', 'ggpubr', 'lmerTest', 'reghelper', 'car',
           'lattice', 'sjstats', 'sjPlot', 'gridExtra', 'stargazer', 'lavaan', 'semPlot',
-          'psych')
-theme_set(theme_classic(base_size = 14)) # set font size for ggplot
+          'psych', 'grid')
+theme_set(theme_classic(base_size = 12)) # set font size for ggplot
 ```
 
 # Scoring/cleaning functions
@@ -292,28 +292,43 @@ stargazer(mod, mod, mod, mod, coef = list(summary(mod)$coefficients[, 1],
 # Marginal effects plots
 ```{r}
 # marginal effects (average effect) of different labs on posttest scores
-png('Figures/E-CLASS_Labtype.png', width = 586, height = 726)
-p1 <- plot_model(mod, type = 'eff', terms = c('Lab.type'), dot.size = 4, line.size = 1, 
-                 ci.lvl = 0.67, title = '', 
-                 axis.title = 'Predicted E-CLASS posttest scores', 
-                 colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
-  theme(legend.position = 'right',
-        text = element_text(size = 25)) +
-  xlab('')
-p1
-dev.off()
-p1$data
+p1 <- plot_model(mod, type = 'eff', terms = c('Lab.type'), ci.lvl = 0.67)
+
+p1.new <- ggplot(data.frame(p1$data), aes(x = factor(x), y = predicted, 
+                                          color = factor(x))) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size = 1, width = 0,
+                position = position_dodge(width = 0.5)) +
+  scale_x_discrete(labels = c('Concepts-based', 'Mixed', 'Skills-based')) +
+  scale_color_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
+  labs(x = 'Lab type', y = 'Predicted E-CLASS posttest scores') +
+  theme(axis.text.x = element_text(angle = 40, vjust = 1, hjust = 1),
+        legend.position = 'none')
 
 # average over lab type and gender
-p2 <- plot_model(mod, type = 'eff', terms = c('Gender', 'Lab.type'), dot.size = 4, 
+p2 <- plot_model(mod, type = 'eff', terms = c('Gender', 'Lab.type'), dot.size = 2, 
                  line.size = 1, ci.lvl = 0.67, title = '', 
-                 axis.title = 'Predicted E-CLASS posttest scores', 
+                 axis.title = '', 
                  colors = c('#e69f00', '#009e74', '#0071b2'), dodge = 0.5) +
   scale_x_discrete(limits = c("Man", "Non-binary", "Woman", "Unknown")) +
-  labs(color = 'Lab type')
+  labs(x = 'Gender', y = '') +
+  theme(legend.position = 'top')
 
 p2.new <- p2
 p2.new$data$x <- rep(c(1, 2, 4, 3), 3)
+
+get_legend <- function(myggplot){
+  # from http://www.sthda.com/english/wiki/wiki.php?id_contents=7930
+  tmp <- ggplot_gtable(ggplot_build(myggplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+
+leg <- get_legend(p2.new)
+p2.new <- p2.new + theme(legend.position = 'none',
+                         axis.text.x = element_text(angle = 40, vjust = 1, hjust = 1),
+                         plot.margin = unit(c(0, 0, 0, -0.5), 'cm'))
 ```
 
 # Race/ethnicity marginal effects plots
@@ -321,14 +336,14 @@ p2.new$data$x <- rep(c(1, 2, 4, 3), 3)
 # average over lab type and race/ethnicity...since race/ethnicity variables are not 
 # independent, we calculate marginal effects separately for each variable...
 p3.native <- plot_model(mod, type = 'eff', terms = c('Race.ethnicity.Other [1]', 
-                                                      'Lab.type')) 
+                                                      'Lab.type'), ci.lvl = 0.67) 
 # the [1]s are because effects are estimated for variable = 0 and variable = 1...we only 
 # want the 1s
 df.race.eff <- data.frame(p3.native$data) %>%
   mutate(race.ethnicity = 'Race.ethnicity.Other')
 for(race in c(new.race.cols[2:length(new.race.cols)])){
   p3 <- plot_model(mod, type = 'eff', terms = c(paste(race, ' [1]', sep = ''),
-                                                 'Lab.type'))
+                                                 'Lab.type'), ci.lvl = 0.67)
   # ...bind results in one dataframe...
   df.race.eff <- rbind(df.race.eff, data.frame(p3$data) %>%
                          mutate(race.ethnicity = race))
@@ -336,143 +351,59 @@ for(race in c(new.race.cols[2:length(new.race.cols)])){
 
 # ...and clean up the dataframe a little bit
 df.race.eff <- df.race.eff %>%
-  mutate(group = factor(group, levels = c('Concepts-based', 'Mixed', 'Skills-based'),
-                        ordered = TRUE)) %>%
   rowwise() %>%
-  mutate(race.ethnicity = strsplit(race.ethnicity, '\\.')[[1]][3])
+  mutate(race.ethnicity = strsplit(race.ethnicity, '\\.')[[1]][3]) %>%
+  mutate(group = factor(group, levels = c('Concepts-based', 'Mixed', 'Skills-based'),
+                        ordered = TRUE),
+         race.ethnicity = case_when(
+           race.ethnicity == 'AmInd' ~ 'American Indian',
+           race.ethnicity == 'NatHawaii' ~ 'Native Hawaiian',
+           TRUE ~ race.ethnicity))
+
+p3 <- ggplot(df.race.eff, aes(x = factor(race.ethnicity, 
+                                         levels = c('American Indian', 'Asian', 'Black',
+                                                    'Hispanic', 'Native Hawaiian', 
+                                                    'White', 'Other', 'Unknown')), 
+                        y = predicted, group = group, color = group)) +
+  geom_point(size = 2, position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size = 1, width = 0.2,
+                position = position_dodge(width = 0.5)) +
+  scale_color_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
+  labs(x = 'Race/ethnicity', y = '') +
+  theme(axis.text.x = element_text(angle = 40, vjust = 1, hjust = 1),
+        legend.position = 'none',
+        plot.margin = unit(c(0, 0, 0, -0.5), 'cm'))
 ```
 
-# Combine gender and race/ethnicity plots
 ```{r}
-# add a var column to df.race.eff that is equal to 'Race/ethnicity'
-df.race.eff <- df.race.eff %>%
-  mutate(race.ethnicity = case_when(
-    race.ethnicity == 'AmInd' ~ 'American Indian',
-    race.ethnicity == 'NatHawaii' ~ 'Native Hawaiian',
-    TRUE ~ race.ethnicity
-  ),
-  var = 'Race/ethnicity')
-
-# get df.gender from marginal effects plot data...here the var is Gender
-df.gender <- data.frame(p2.new$data) %>%
-  mutate(gender = case_when(
-    x == 1 ~ 'Man',
-    x == 2 ~ 'Non-binary',
-    x == 3 ~ 'Woman',
-    x == 4 ~ 'Unknown'
-  ),
-  var = 'Gender')
-
-# make sure the column names for both of the above dataframes are equal and combine them
-cols <- c('x', 'predicted', 'std.error', 'conf.low', 'conf.high', 'lab', 'group', 'var')
-colnames(df.race.eff) <- cols
-colnames(df.gender) <- cols
-df.demos <- rbind(df.race.eff, df.gender)
-
-# plot combined gender and race/ethnicity marginal effects across lab type
-png('Figures/E-CLASS_Labtype_Demos.png', width = 1172, height = 726)
-ggplot(df.demos, aes(x = factor(group, levels = c('Man', 'Non-binary', 'Woman', 
-                                                  'American Indian', 'Asian', 'Black',  
-                                                  'Hispanic', 'Native Hawaiian', 'White', 
-                                                  'Other', 'Unknown')), y = predicted, 
-                     group = lab, color = lab)) +
-  geom_point(size = 4, position = position_dodge(width = 0.7)) +
-  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size = 1, width = 0.2,
-                position = position_dodge(width = 0.7)) +
-  scale_color_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
-  labs(x = '', y = 'Predicted E-CLASS posttest scores', color = 'Lab type') +
-  facet_wrap(~var, scales = 'free_x') +
-  theme(legend.position = 'top') +
-  theme(axis.text.x = element_text(angle = 40, vjust = 1, hjust = 1),
-        text = element_text(size = 20))
+png('Figures/E-CLASS_Labtype_Demos.png', width = 586, height = 363)
+grobs = cbind(ggplotGrob(p1.new), ggplotGrob(p2.new), ggplotGrob(p3), size = "first")
+grid.arrange(leg, arrangeGrob(grobs), heights = c(1, 10))
 dev.off()
 ```
 
-***Add comments after here**
-
-# Combine E-CLASS and PLIC CIS datasets
+# Process CIS items
 ```{r}
-full.df <- fread('C:/Users/Cole/Documents/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
-  filter(Survey_x == 'C' | Survey_y == 'C')
-
-full.df[full.df$Survey_x == 'F', 'PreScores'] <- NA_real_
-full.df[full.df$Survey_y == 'F', 'PostScores'] <- NA_real_
-
-full.df <- data.table(full.df)[, `:=`(N.students = .N, pre.rate = sum(Survey_x == 'C')/.N,
-                                      post.rate = sum(Survey_y == 'C')/.N),  .(Class_ID)]
-
-full.df <- full.df %>%
-  filter(!is.na(Lab_level) & !is.na(Lab_purpose) & (Lab_purpose != '') & (pre.rate > 0) & 
-           (post.rate > 0))
-
-df.PLIC <- full.df %>%
-  filter(!is.na(PreScores) & !is.na(PostScores))
-
-source('C:/Users/Cole/Documents/GitHub/PLIC/Process-Merge-Concat/PLIC_DataProcessing.R')
-df.PLIC <- Collapse.vars(df.PLIC) %>%
-  mutate(Lab_level = relevel(as.factor(case_when(
-    Lab_level == 'Intro-Algebra' ~ 'FY-Algebra',
-    Lab_level == 'Intro-Calculus' ~ 'FY-Calculus',
-    (Lab_level == 'Sophomore') | (Lab_level == 'Junior') | 
-      (Lab_level == 'Senior') ~ 'BFY',
-    TRUE ~ NA_character_
-  )), ref= 'FY-Algebra'),
-  Lab_purpose = relevel(as.factor(case_when(
-    Lab_purpose == 'Reinforce concepts' ~ 'Concepts-based',
-    Lab_purpose == 'Both about equally' ~ 'Mixed',
-    Lab_purpose == 'Develop lab skills' ~ 'Skills-based')), ref = 'Concepts-based'))
-
-cols <- c('Class_ID', 'institution', 'Lab_purpose', 'T1', 'T2', 'T3', 'D1', 'D2', 'D3', 
-          'D4', 'D5', 'E1', 'E2', 'E3', 'E4', 'E5', 'D6')
-
-df.PLIC <- df.PLIC[, c('Class_ID', 'anon_institution_id', 'Lab_purpose', 'Q28_1', 
-                       'Q28_2', 'Q28_3', 'Q29_1', 'Q29_2', 'Q29_3', 'Q29_4', 'Q29_5', 
-                       'Q31_1', 'Q31_2', 'Q31_3', 'Q31_4', 'Q31_5', 'Q31_6', 'PreScores', 
-                       'PostScores')]
-colnames(df.PLIC) <- c(cols, 'PLIC.PreScores', 'PLIC.PostScores')
-
 df.matched[, names(df.matched) %like% "Q34|Q35|Q36"] <- 
   data.frame(lapply(df.matched[, names(df.matched) %like% "Q34|Q35|Q36"], function(x) 
     droplevels(factor(as.vector(x), levels = c('Never', 'Rarely', 'Sometimes', 'Often', 
                                                'Always'), ordered = TRUE))))
 
 df.matched[, names(df.matched) %like% "Q34|Q35|Q36"] <- data.frame(lapply(df.matched[, names(df.matched) %like% "Q34|Q35|Q36"], function(x) as.numeric(x)))
-
-df.ECLASS <- df.matched[, c('ResponseId.CIS', 'anon_university_id', 'Lab.goal', 'Q34_1', 
-                            'Q34_2', 'Q34_3', 'Q35_1', 'Q35_2', 'Q35_3', 'Q35_4', 
-                            'Q35_5', 'Q36_1', 'Q36_2', 'Q36_3', 'Q36_4', 'Q36_5', 
-                            'Q36_6', 'student.score.pre', 'student.score.post')]
-
-colnames(df.ECLASS) <- c(cols, 'ECLASS.PreScores', 'ECLASS.PostScores')
-
-df <- bind_rows(df.PLIC, df.ECLASS)
-
-CIS.df <- unique(df[, cols[4:length(cols)]])
-
-sum(do.call(paste0, CIS.df) %in% do.call(paste0, df.ECLASS[, cols[4:length(cols)]]))
-
-sum(do.call(paste0, CIS.df) %in% do.call(paste0, df.PLIC[, cols[4:length(cols)]]))
-
-sum(do.call(paste0, CIS.df) %in% do.call(paste0, df.ECLASS[, cols[4:length(cols)]]) & 
-      do.call(paste0, CIS.df) %in% do.call(paste0, df.PLIC[, cols[4:length(cols)]]))
 ```
 
 # Run CFA on CIS
 ```{r}
 mod <- '
-  decision =~ D1 + D2 + D3 + D4 + D5 + D6
-  #epistemic =~ E1 + E2 + E3 + E4 + E5 + T1 + T2 + T3
-
-  #decision ~~ epistemic
-  #E1 ~~ E2 + E3
-  #E4 ~~ E2 + E3
+  agency =~ Q35_1 + Q35_2 + Q35_3 + Q35_4 + Q35_5 + Q35_6 + Q34_1 + Q34_2 + Q34_3
 '
 
-#fit <- cfa(mod, df[!duplicated(df$Class_ID),])
+# unique classes only
+CIS.df <- unique(df.matched[, names(df.matched) %like% "Q34|Q35|Q36"])
+
 fit <- cfa(mod, CIS.df)
 summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
-semPaths(fit, whatLabels = 'std', edge.color = 'black', curve = 2, residuals = FALSE, 
-         label.scale = TRUE, mar = c(8, 8, 8, 8))
+semPaths(fit, whatLabels = 'std')
 resid(fit, type = 'cor')
 ```
 
@@ -480,69 +411,51 @@ resid(fit, type = 'cor')
 ```{r}
 set.seed(11)
 inds <- sample(seq_len(nrow(CIS.df)), size = nrow(CIS.df)/2)
-CIS.train.df <- CIS.df[inds,]
+CIS.train.df <- CIS.df[inds, names(CIS.df) %like% 'Q34|Q35']
 
 CIS.train.df
 
-fa.parallel(CIS.train.df[, c('D1' , 'D2', 'D3', 'D4', 'D5', 'D6')])
+fa.parallel(CIS.train.df)
 
-fit1 <- fa(CIS.train.df[, c('D1' , 'D2', 'D3', 'D4', 'D5', 'D6')], 1)
+fit1 <- fa(CIS.train.df, 1)
 fit1
 fa.diagram(fit1)
 
-fit3 <- fa(CIS.train.df, 3)
-fit3
-fa.diagram(fit3)
+fit2 <- fa(CIS.train.df, 2)
+fit2
+fa.diagram(fit2)
 ```
 
 # Run CFA on CIS with new model
 ```{r}
 mod <- '
-  decision =~ D1 + D2 + D3 + D4 + D5 + D6 + T3
-  epistemic =~ E1 + E2 + E4 + E5 + T2
-
-  decision ~~ epistemic
+  agency =~ Q35_1 + Q35_2 + Q35_3 + Q35_4 + Q35_5 + Q34_1 + Q34_3
 '
 
 fit <- cfa(mod, CIS.df[-inds,])
 summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
-semPaths(fit)#, what = 'diagram', whatLabels = 'stand', layout = 'tree2', residuals = FALSE, nCharNodes = 10, edge.color = 'black', edge.label.cex = 1.5, curve = 4, label.scale = FALSE, nodeLabels = c('D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'E1', 'E2', 'E4', 'E5', 'Decision-making\nagency', 'Epistemic\nagency'), rotation = 2, sizeMan = 6, sizeLat = 24, width = 4, height = 5, mar = c(1, 6, 1, 2), fixedStyle = c(lty = 1), shapeLat = 'ellipse')
+semPaths(fit, whatLabels = 'std')
+resid(fit, type = 'cor')
 ```
 
+# Full SEM
 ```{r}
 df.matched <- df.matched %>%
-  mutate(Lab.goal.skills = 1 * (Lab.goal == 'Skills-based'),
-         Lab.goal.both = 1 * (Lab.goal == 'Mixed'),
-         Lab.goal.concepts = 1 * (Lab.goal == 'Concepts-based'))
+  mutate(Lab.goal.skills = 1 * (Lab.type == 'Skills-based'),
+         Lab.goal.both = 1 * (Lab.type == 'Mixed'),
+         Lab.goal.concepts = 1 * (Lab.type == 'Concepts-based'))
 
 mod.sem <- '
   level: 1
     student.score.post ~ student.score.pre
   level: 2
-    decision =~ 1.0 * Q35_1 + 1.310 * Q35_2 + 1.122 * Q35_3 + 1.013 * Q35_4 + 0.807 * Q35_5 + 0.906 * Q36_6
-    #epistemic =~ 1.0 * Q36_1 + 0.990 * Q36_2 + 0.899 * Q36_4 + 0.593 * Q36_5
-
-    #decision ~~ 0.241 * epistemic
-    #Q36_1 ~~ 0.131 * Q36_2 + -0.004 * Q36_3
-    #Q36_2 ~~ 0.165 * Q36_4
-    #Q36_3 ~~ 0.344 * Q36_4
-    Q35_1 ~~ 0.524 * Q35_1
-    Q35_2 ~~ 0.297 * Q35_2
-    Q35_3 ~~ 0.645 * Q35_3
-    Q35_4 ~~ 0.570 * Q35_4
-    Q35_5 ~~ 0.632 * Q35_5
-    Q36_6 ~~ 0.630 * Q36_6
-    #Q36_1 ~~ 0.379 * Q36_1
-    #Q36_2 ~~ 0.272 * Q36_2
-    #Q36_4 ~~ 0.532 * Q36_4
-    #Q36_5 ~~ 0.561 * Q36_5
-    decision ~~ 0.556 * decision
-    #epistemic ~~ 0.534 * epistemic
+    agency =~ Q35_1 + Q35_2 + Q35_3 + Q35_4 + Q35_5 + Q34_1 + Q34_3
+    Q35_3 ~~ Q35_4 + Q35_5
+    Q35_4 ~~ Q35_5
 
     decision ~ Lab.goal.skills + Lab.goal.both
-    #epistemic ~ Lab.goal.skills + Lab.goal.both
 
-    student.score.post ~ decision + Lab.goal.skills + Lab.goal.both
+    student.score.post ~ agency + Lab.goal.skills + Lab.goal.both
 '
 
 fit <- sem(mod.sem, data = df.matched, cluster = "ResponseId.CIS")
@@ -550,7 +463,3 @@ summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
 standardizedsolution(fit)
 resid(fit, type = 'cor')
 ```
-
-
-
-
