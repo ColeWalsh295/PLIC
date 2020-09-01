@@ -18,7 +18,7 @@ source('Calculate-MutInfo.R', local = TRUE)
 
 # Create dataframes for analyses
 ```{r}
-df_full <- read.csv('C:/Users/Cole/Documents/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv')
+df_full <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv')
 
 # identify columns corresponding to scores on a question and columns corresponding to 
 # 'other' response choices...we don't care about the 'other' response choices since this 
@@ -134,9 +134,9 @@ ggplot(Models.MI.df, aes(x = Prop.Sel, y = MI, color = Question, shape = Questio
   scale_shape_manual(values = c(15, 16, 17, 18)) +
   scale_color_manual(values = c("#0072b2", "#d55e00", "#009e73", "#009e73")) +
   scale_fill_manual(values = labels.list) +
-  geom_text_repel(data = subset(Models.MI.df, Item %in% labels.list),
+  geom_label_repel(data = subset(Models.MI.df, Item %in% labels.list),
                   aes(x = Prop.Sel, y = MI, color = Question, label = Item), 
-                  nudge_x = 0.05, nudge_y = 0.03, size = 6) +
+                  nudge_x = 0.05, nudge_y = 0.03, size = 6, show.legend = FALSE) +
   theme_classic() +
   theme(text = element_text(size = 18)) +
   labs(x = 'Fraction of times selected', y = 'Mutual information (bits)') +
@@ -164,9 +164,9 @@ ggplot(Methods.MI.df, aes(x = Prop.Sel, y = MI, color = Question, shape = Questi
   scale_shape_manual(values = c(15, 16, 17)) +
   scale_color_manual(values = c("#0072b2", "#d55e00", "#cc79a7")) +
   scale_fill_manual(values = labels.list) +
-  geom_text_repel(data = subset(Methods.MI.df, Item %in% labels.list),
+  geom_label_repel(data = subset(Methods.MI.df, Item %in% labels.list),
             aes(x = Prop.Sel, y = MI, color = Question, label = Item), nudge_x = 0.02, 
-            nudge_y = 0.06, size = 6) +
+            nudge_y = 0.06, size = 6, show.legend = FALSE) +
   theme_classic() +
   theme(text = element_text(size = 18)) +
   labs(x = 'Fraction of times selected', y = 'Mutual information (bits)')
@@ -194,9 +194,9 @@ ggplot(Actions.MI.df, aes(x = Prop.Sel, y = MI, color = Question, shape = Questi
   scale_shape_manual(values = c(15, 16, 17)) +
   scale_color_manual(values = c("#0072b2", "#d55e00", "#009e73")) +
   scale_fill_manual(values = labels.list) +
-  geom_text_repel(data = subset(Actions.MI.df, Item %in% labels.list),
+  geom_label_repel(data = subset(Actions.MI.df, Item %in% labels.list),
             aes(x = Prop.Sel, y = MI, color = Question, label = Item), nudge_x = 0.04, 
-            nudge_y = 0.01, size = 6) +
+            nudge_y = 0.01, size = 6, show.legend = FALSE) +
   theme_classic() +
   theme(text = element_text(size = 18)) +
   labs(x = 'Fraction of times selected', y = 'Mutual information (bits)')
