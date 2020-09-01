@@ -104,6 +104,9 @@ N_methods <- floor((max(scores.df$methods) - min(scores.df$methods))/
 N_actions <- floor((max(scores.df$actions) - min(scores.df$actions))/
                      (3.5 * sd(scores.df$actions)/(nrow(scores.df)^(1/3))))
 
+N_models
+N_methods
+N_actions
 
 scores <- data.frame(discretize(scores.df$models, nbins = N_models),
                      discretize(scores.df$methods, nbins = N_methods), 
