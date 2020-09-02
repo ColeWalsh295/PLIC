@@ -205,3 +205,23 @@ ggplot(Actions.MI.df, aes(x = Prop.Sel, y = MI, color = Question, shape = Questi
   labs(x = 'Fraction of times selected', y = 'Mutual information (bits)')
 dev.off()
 ```
+
+# Mutual information with vector of factor scores
+```{r}
+net.df <- MI.CI(df_Items, scores, reps = 100, vector = TRUE)
+
+ggplot(net.df, aes(x = Prop.Sel, y = MI, color = Question, shape = Question)) +
+  geom_point(size = 3.5) +
+  geom_errorbar(aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 1) +
+  scale_shape_manual(values = c(15, 16, 17, 15, 16, 17, 15, 15, 17, 16)) +
+  scale_color_manual(values = c(rep("#0072b2", 3), rep("#d55e00", 3), rep("#009e73", 3), 
+                                "#cc79a7")) #+
+  # scale_fill_manual(values = labels.list) +
+  # geom_label_repel(data = subset(Actions.MI.df, Item %in% labels.list),
+  #           aes(x = Prop.Sel, y = MI, color = Question, label = Item), nudge_x = 0.04, 
+  #           nudge_y = 0.01, size = 6, show.legend = FALSE) +
+  # theme_classic() +
+  # theme(text = element_text(size = 18)) +
+  # labs(x = 'Fraction of times selected', y = 'Mutual information (bits)')
+```
+

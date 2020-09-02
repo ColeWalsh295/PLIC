@@ -20,7 +20,8 @@ MI.vec.to.bits <- function (vec.1, vec.2) {
   return(MI)
 }
 
-MI.CI <- function(df.items, vec.scores, reps = 1000, CI.Low = 0.025, CI.High = 0.975) {
+MI.CI <- function(df.items, vec.scores, reps = 1000, CI.Low = 0.025, CI.High = 0.975,
+                  vector = FALSE, samples = 1000) {
   
 #' Calculates mutual information with confidennce intervals
 #' 
@@ -49,7 +50,12 @@ MI.CI <- function(df.items, vec.scores, reps = 1000, CI.Low = 0.025, CI.High = 0
   
   df <- cbind(df.items, vec.scores)
   df.boot <- replicate(reps, df[sample(1:nrow(df), replace = T),], simplify = F)
-  MI.boot <- sapply(df.boot, function(x) apply(x, 2, MI.vec.to.bits, vec.2 = x[, ncol(x)]))
+  if(!vector){
+    MI.boot <- sapply(df.boot, function(x) apply(x, 2, MI.vec.to.bits, vec.2 = x[, ncol(x)]))
+  } else {
+    MI.boot <- sapply(df.boot, function(x) apply(x, 2, MI.vec.to.bits, 
+                                                 vec.2 = x[, (ncol(x) - 2):ncol(x)]))
+  }
   
   MI.CI <- apply(MI.boot, 1, quantile, probs = c(CI.Low, CI.High))
   MI.CI <- data.frame(t(MI.CI))
