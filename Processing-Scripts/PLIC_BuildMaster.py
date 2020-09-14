@@ -249,76 +249,46 @@ def AddCourseInfo(Students_FILE, Courses_FILE):
 
     return(df)
 
+def Identify(file, file_other, header_file, file_out, Class_ID):
+
+    Questions = ['Q1B', 'Q1D', 'Q1E', 'Q2B', 'Q2D', 'Q2E', 'Q3B', 'Q3D', 'Q3E', 'Q4B']
+
+    df = pd.read_csv(file)
+    df = df.loc[df['Class_ID'] == Class_ID, :]
+
+    dfOther = pd.read_csv(file_other)
+    dfOther_Pre = dfOther.loc[dfOther['Survey_x'] == 'C', [col + 's_x' for col in Questions]]
+    dfOther_Post = dfOther.loc[dfOther['Survey_y'] == 'C', [col + 's_y' for col in Questions]]
+    dfOther_Pre.columns = dfOther_Pre.columns.str.replace(r's_x$', 's')
+    dfOther_Post.columns = dfOther_Post.columns.str.replace(r's_y$', 's')
+    dfOther = pd.concat([dfOther_Pre, dfOther_Post], axis = 0, join = 'inner').reset_index(drop = True)
+
+    df_Pre = df.loc[df['Survey_x'] == 'C', [col + 's_x' for col in Questions]].reset_index()
+    df_Post = df.loc[df['Survey_y'] == 'C', [col + 's_y' for col in Questions]].reset_index()
+    df_Pre.columns = df_Pre.columns.str.replace(r's_x$', 's')
+    df_Post.columns = df_Post.columns.str.replace(r's_y$', 's')
+    pre_scores = Scoring.CalcFactorScores(dfOther, df_Pre).rename(columns = {'models':'models_PRE', 'methods':'methods_PRE', 'actions':'actions_PRE'}).set_index(pd.Index(df_Pre['index']))
+    post_scores = Scoring.CalcFactorScores(dfOther, df_Post).rename(columns = {'models':'models_POST', 'methods':'methods_POST', 'actions':'actions_POST'}).set_index(pd.Index(df_Post['index']))
+    print(pre_scores)
+    print(post_scores)
+    df = pd.concat([df, pre_scores, post_scores], axis = 1, join = 'outer')
+
+    df['ID'] = df['Q5a_y'].fillna(df['Q5a_x'])
+    df['LastName'] = df['Q5b_y'].fillna(df['Q5b_x'])
+    df['FirstName'] = df['Q5c_y'].fillna(df['Q5c_x'])
+
+    df.columns = df.columns.str.replace(r's_x$', '_PRE')
+    df.columns = df.columns.str.replace(r's_y$', '_POST')
+    df = df.rename(columns = {'PreScores':'TotalScores_PRE', 'PostScores':'TotalScores_POST'})
+
+    df.headers = pd.read_csv(header_file)
+    df = pd.concat([df.headers, df], join = 'inner')
+    df.to_csv(file_out, index = False)
+    return df
+
 def Deidentify(file_id, file_out):
 
     # legacy; remove in future version since we can provide identifiable data now
-    def SetMajor(df):
-        df['Q6b'] = df['Q6b_y'].fillna(df['Q6b_x'])
-        df['Q6b.i'] = df['Q6b.i_y'].fillna(df['Q6b.i_x'])
-
-        conditions = [
-            df['Q6b'] < 4,
-            df['Q6b.i'] < 5
-        ]
-
-        output = [
-            'Physics', 'Non-physics'
-        ]
-
-        df['Major'] = np.select(conditions, output, None)
-        return df
-
-    def SetGender(df):
-        conditions = [
-            df['Q6e_1_y'] == 1,
-            df['Q6e_2_y'] == 1,
-            df['Q6e_1_x'] == 1,
-            df['Q6e_2_x'] == 1
-        ]
-
-        output = [
-            'Male', 'Female'
-        ]
-
-        df['Gender'] = np.select(conditions, np.tile(output, 2), None)
-        return df
-
-    def SetURM(df):
-        conditions = [
-            df['Q6f_5_y'] == 1,
-            df['Q6f_1_y'] == 1,
-            df['Q6f_7_y'] == 1,
-            df['Q6f_3_y'] == 1,
-            df['Q6f_4_y'] == 1,
-            df['Q6f_2_y'] == 1,
-            df['Q6f_6_y'] == 1,
-            df['Q6f_5_x'] == 1,
-            df['Q6f_1_x'] == 1,
-            df['Q6f_7_x'] == 1,
-            df['Q6f_3_x'] == 1,
-            df['Q6f_4_x'] == 1,
-            df['Q6f_2_x'] == 1,
-            df['Q6f_6_x'] == 1,
-        ]
-
-        output = ['URM'] * 5 + ['Majority'] * 2
-
-        df['URM_Status'] = np.select(conditions, np.tile(output, 2), None)
-        return df
-
-    def SetClassStanding(df):
-        conditions = [
-            df['Q6a_y'] == 1,
-            df['Q6a_y'] > 1,
-            df['Q6a_x'] == 1,
-            df['Q6a_x'] > 1,
-        ]
-
-        output = ['Freshman', 'Beyond-first-year']
-
-        df['Class_Standing'] = np.select(conditions, np.tile(output, 2), None)
-        return df
-
     def CrossTab(df):
         df_tab = df.loc[:, ['Class_ID', 'Gender', 'URM_Status', 'Major', 'Class_Standing']]
 
@@ -517,3 +487,70 @@ def Deidentify(file_id, file_out):
                                         'Class_Standing_Available_Post'])
 
     df_Final.to_csv(file_out, index = False)
+
+def SetMajor(df):
+    df['Q6b'] = df['Q6b_y'].fillna(df['Q6b_x'])
+    df['Q6b.i'] = df['Q6b.i_y'].fillna(df['Q6b.i_x'])
+
+    conditions = [
+        df['Q6b'] < 4,
+        df['Q6b.i'] < 5
+    ]
+
+    output = [
+        'Physics', 'Non-physics'
+    ]
+
+    df['Major'] = np.select(conditions, output, None)
+    return df
+
+def SetGender(df):
+    conditions = [
+        df['Q6e_1_y'] == 1,
+        df['Q6e_2_y'] == 1,
+        df['Q6e_1_x'] == 1,
+        df['Q6e_2_x'] == 1
+    ]
+
+    output = [
+        'Male', 'Female'
+    ]
+
+    df['Gender'] = np.select(conditions, np.tile(output, 2), None)
+    return df
+
+def SetURM(df):
+    conditions = [
+        df['Q6f_5_y'] == 1,
+        df['Q6f_1_y'] == 1,
+        df['Q6f_7_y'] == 1,
+        df['Q6f_3_y'] == 1,
+        df['Q6f_4_y'] == 1,
+        df['Q6f_2_y'] == 1,
+        df['Q6f_6_y'] == 1,
+        df['Q6f_5_x'] == 1,
+        df['Q6f_1_x'] == 1,
+        df['Q6f_7_x'] == 1,
+        df['Q6f_3_x'] == 1,
+        df['Q6f_4_x'] == 1,
+        df['Q6f_2_x'] == 1,
+        df['Q6f_6_x'] == 1,
+    ]
+
+    output = ['URM'] * 5 + ['Majority'] * 2
+
+    df['URM_Status'] = np.select(conditions, np.tile(output, 2), None)
+    return df
+
+def SetClassStanding(df):
+    conditions = [
+        df['Q6a_y'] == 1,
+        df['Q6a_y'] > 1,
+        df['Q6a_x'] == 1,
+        df['Q6a_x'] > 1,
+    ]
+
+    output = ['Freshman', 'Beyond-first-year']
+
+    df['Class_Standing'] = np.select(conditions, np.tile(output, 2), None)
+    return df

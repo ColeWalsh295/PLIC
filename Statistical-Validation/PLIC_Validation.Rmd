@@ -5,18 +5,19 @@ library(tidyverse)
 library(data.table)
 library(BlandAltmanLeh)
 library(lmerTest)
+library(reghelper)
 library(sjstats)
 library(lavaan)
 library(semPlot)
 library(ggpubr)
 library(psych)
-source('C:/Users/Cole/Documents/GitHub/PLIC/Process-Merge-Concat/PLIC_DataProcessing.R')
+source('C:/Users/Cole/Documents/GitHub/PLIC/Processing-Scripts/PLIC_DataProcessing.R')
 theme_set(theme_classic(base_size = 14))
 ```
 
 # Read and get institution/course/class breakdowns
 ```{r}
-full.df <- fread('C:/Users/Cole/Documents/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
+full.df <- fread('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
   filter(Survey_x == 'C' | Survey_y == 'C') # remove events with no CR surveys
 
 # Remove FR scores
@@ -198,51 +199,61 @@ fa(train.df, 1)
 fa(train.df, 2)
 fa(train.df, 3)
 fa(train.df, 4)
-# fa.diagram(fit)
 
-# mod <- ' models  =~ Q1B + Q2B + Q3B + Q3D
-#   methods =~ Q1D + Q2D + Q4B
-#   actions =~ Q1E + Q2E + Q3E '
-# 
-# CFA <- cfa(mod, fa.df, std.lv = TRUE, estimator = 'ML')
-# 
-# summary(CFA, fit.measures = TRUE, modindices = TRUE, standardized = TRUE)
-# resid(CFA)
-# semPaths(CFA, what = 'diagram', whatLabels = 'stand', layout = 'tree2', 
-#          residuals = FALSE, nCharNodes = 10, edge.color = 'black', edge.label.cex = 1.5, 
-#          curve = 2, label.scale = FALSE, 
-#          nodeLabels = c('Q1B', 'Q2B', 'Q3B', 'Q3D', 'Q1D', 'Q2D', 'Q4B', 'Q1E', 'Q2E', 
-#                         'Q3E', 'Evaluate\nModels', 'Evaluate\nMethods', 
-#                         'Suggest\nFollow-ups'), rotation = 2, sizeMan = 7, sizeMan2 = 6, 
-#          sizeLat = 16, mar = c(1, 6, 1, 2))
+mod <- ' models  =~ Q1B + Q2B + Q3B + Q3D
+  methods =~ Q1D + Q2D + Q4B
+  actions =~ Q1E + Q2E + Q3E '
+
+CFA <- cfa(mod, fa.df[-inds, ], std.lv = TRUE, estimator = 'ML')
+
+summary(CFA, fit.measures = TRUE, modindices = TRUE, standardized = TRUE)
+resid(CFA)
+semPaths(CFA, what = 'diagram', whatLabels = 'stand', layout = 'tree2',
+         residuals = FALSE, nCharNodes = 10, edge.color = 'black', edge.label.cex = 1.5,
+         curve = 2, label.scale = FALSE,
+         nodeLabels = c('Q1B', 'Q2B', 'Q3B', 'Q3D', 'Q1D', 'Q2D', 'Q4B', 'Q1E', 'Q2E',
+                        'Q3E', 'Evaluate\nModels', 'Evaluate\nMethods',
+                        'Suggest\nFollow-ups'), rotation = 2, sizeMan = 7, sizeMan2 = 6,
+         sizeLat = 16, mar = c(1, 6, 1, 2))
 ```
 
 # Concurrent validity
 ```{r}
-full.df %>%
+full.df <- full.df %>%
+  mutate(Lab_level = factor(Lab_level, levels = c('HighSchool', 'Intro-Algebra',
+                                                  'Intro-Calculus', 'Sophomore', 
+                                                  'Junior',  'Senior')))
+
+desc.tab <- full.df %>%
   filter(!is.na(PreScores)) %>%
   group_by(Lab_level) %>%
   summarize(N = n(), Avg = mean(PreScores), se = sd(PreScores)/sqrt(N))
+desc.tab
 
-p <- ggplot(full.df[!is.na(full.df$PreScores),] %>%
-              mutate(Lab_level = factor(Lab_level, 
-                                        levels = c('HighSchool', 'Intro-Algebra',
-                                                   'Intro-Calculus', 'Sophomore', 
-                                                   'Junior', 'Senior'))), 
+p <- ggplot(full.df[!is.na(full.df$PreScores),], 
             aes(x = Lab_level, y = PreScores, group = Lab_level, color = Lab_level))
 add_summary(p, fun = 'mean_se', group = c('Lab_level')) +
   scale_color_manual(values = c('#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', 
                                 '#e6ab02')) +
-  scale_x_discrete(labels = c('High school', 'Intro (algebra)', 'Intro (calculus)', 'Sophomore', 'Junior', 'Senior/graduate')) +
+  scale_x_discrete(labels = paste(c('High school', 'Intro (algebra)', 'Intro (calculus)', 
+                                    'Sophomore', 'Junior', 'Senior/graduate'), ' (N = ', 
+                                  desc.tab$N, ')', sep ='')) +
   theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust = 1),
         legend.position = "none") +
-  labs(x = 'Course level', y = 'Average pretest score')
+  labs(x = 'Course level', y = 'Average pretest score') +
+  geom_label(data = desc.tab, aes(y = Avg + se + 0.2, label = paste(round(Avg, 2), 
+                                                                    "\u00B1", round(se, 2))))
 
-#+
- # geom_density(alpha = 0.4) #+
-  #scale_fill_manual(values = c('#d95f02', '#7570b3'))
+mod <- lm(PreScores ~ Lab_level, full.df[!is.na(full.df$PreScores),
+                                                            ] %>%
+              mutate(Lab_level = factor(Lab_level, 
+                                        levels = c('HighSchool', 'Intro-Algebra', 
+                                                   'Intro-Calculus', 'Sophomore', 
+                                                   'Junior', 'Senior'))))
+summary(mod)
+reghelper::beta(mod, x = FALSE, y = TRUE)
+anova(mod)
 ```
-
 
 # Student test-retest reliability
 ```{r}
