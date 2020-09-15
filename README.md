@@ -1,7 +1,5 @@
 # Physics Lab Inventory of Critical Thinking (PLIC)
 
-This repository includes python scripts used in the administration of the PLIC through qualtrics. This administration model also automatically analyzes collected data and sends reports to instructors summarizing the performance of their students.
+We developed the [PLIC](https://journals.aps.org/prper/abstract/10.1103/PhysRevPhysEducRes.15.010135) to measure students' critical thinking skills in the context of experimental physics, defined as the decision making involved in interpreting data, drawing accurate conclusions from data, comparing and evaluating models and data, evaluating methods, and deciding how to proceed in an investigation. The scripts and notebooks in this repository are parts of various projects (both completed and ongoing). Python scripts in `Automation-Files` are also used as part of the automated system used to administer the PLIC, while R scripts in `Instructor_Dashboard` are used to generate interactive dashboards for instructors.
 
-We also provide an online interactive dashboard that allows instructors to explore their data in more depth and download the raw data for their class. The R code used in building this dashboard is also included in this repository.
-
-The analyses associated with each of the projects conducted using the PLIC are also included, as well as some scripts and notebooks used for processing the data.
+In `Lab-analysis` we analyze the effect of lab purpose on students' scores on the PLIC and another common assessment in physics education research (PER), the E-CLASS. In `Module-analysis` we examine how item responses on the PLIC hang together using a recently developed tool from PER, module analysis.
