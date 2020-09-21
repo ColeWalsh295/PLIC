@@ -4,7 +4,7 @@ output:
   html_document: default
 ---
 # Load necessary packages
-```{r, message = FALSE, warning = FALSE}
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
 library(tidyverse)
 library(DescTools)
 library(ryouready)
@@ -15,7 +15,7 @@ theme_set(theme_fivethirtyeight())
 ```
 
 # Load file and do some preprocessing
-```{r}
+```{r, echo = FALSE, results = FALSE}
 file = 'C:/Users/Cole/Documents/DATA/PLIC_DATA/Experts/Experts_v08042020_09202020.csv'
 
 info <- data.frame(lapply(read.csv(file, nrows = 1), 
@@ -63,17 +63,17 @@ df <- recode2(df, vars = colnames(df)[colnames(df) %like any% c('%Q152%',
 # Analysis
 
 ## Page 1
-```{r}
-# What do you think Group 1 should say about whether their data agree with the 
-# model?
+```{r, echo = FALSE}
+print('What do you think Group 1 should say about whether their data agree with 
+      the model?')
 
 ggplot(df, aes(x = factor(Q1a), fill = factor(Q1a))) +
   geom_bar(aes(y = (..count..)/sum(..count..))) +
   ggtitle('Group 1, data agree with the model') +
   theme(legend.position = "none")
 
-# Which statements below support your reasoning for whether Group 1's data agree 
-# with the model?
+print('Which statements below support your reasoning for whether Group 1s data 
+      agree with the model?')
 
 cols.temp <- colnames(df)[(colnames(df) %like% '%Q1b%') & 
                             !(colnames(df) %like% '%TEXT%')]
@@ -89,6 +89,8 @@ ggplot(df.temp, aes(x = variable, fill = variable, y = value/nrow(df))) +
   ggtitle('Group 1, reasoning') +
   theme(legend.position = "none",
         axis.text.x = element_text(angle = 30, vjust = 0.5, hjust = 1))
+
+print('Group 1 evaluate methods')
 
 cols.temp <- colnames(df)[(colnames(df) %like% '%Q139%') & 
                             !(colnames(df) %like% '%TEXT%')]
@@ -148,23 +150,23 @@ ggplot(df.temp, aes(x = factor(value), fill = factor(value))) +
   theme(legend.position = "none") +
   facet_wrap(~variable)
 
-# How effective do you think Group 1's method was for testing whether the data 
-# obey the model?
+print('How effective do you think Group 1s method was for testing whether the 
+      data obey the model?')
 
 ggplot(df, aes(x = factor(Q1c), fill = factor(Q1c))) +
   geom_bar(aes(y = (..count..)/sum(..count..))) +
   ggtitle('Group 1, method effectiveness') +
   theme(legend.position = "none")
 
-# What feature was most important to you in evaluating the effectiveness of Group 
-# 1's methods (either as strengths or weaknesses)?
+print('What feature was most important to you in evaluating the effectiveness of 
+      Group 1s methods (either as strengths or weaknesses)?')
 
 ggplot(df, aes(x = factor(Q133), fill = factor(Q133))) +
   geom_bar(aes(y = (..count..)/sum(..count..))) +
   ggtitle('Group 1, feature of method') +
   theme(legend.position = "none")
 
-# What do you think Group 1 should do next?
+print('What do you think Group 1 should do next?')
 
 cols.temp <- colnames(df)[(colnames(df) %like% '%Q134%') & 
                             !(colnames(df) %like% '%TEXT%')]
@@ -183,17 +185,17 @@ ggplot(df.temp, aes(x = variable, fill = variable, y = value/nrow(df))) +
 ```
 
 ## Page 2
-```{r}
-# What do you think Group 2 should say about whether their data agree with the 
-# model?
+```{r, echo = FALSE}
+print('What do you think Group 2 should say about whether their data agree with 
+      the model?')
 
 ggplot(df, aes(x = factor(Q2a), fill = factor(Q2a))) +
   geom_bar(aes(y = (..count..)/sum(..count..))) +
   ggtitle('Group 2, data agree with the model') +
   theme(legend.position = "none")
 
-# Which statements below support your reasoning for whether Group 2's data agree 
-# with the model?
+print('Which statements below support your reasoning for whether Group 2s data 
+      agree with the model?')
 
 cols.temp <- colnames(df)[(colnames(df) %like% '%Q2b%') & 
                             !(colnames(df) %like% '%TEXT%')]
@@ -209,6 +211,8 @@ ggplot(df.temp, aes(x = variable, fill = variable, y = value/nrow(df))) +
   ggtitle('Group 2, reasoning') +
   theme(legend.position = "none",
         axis.text.x = element_text(angle = 30, vjust = 0.5, hjust = 1))
+
+print('Group 2 evaluate methods')
 
 cols.temp <- colnames(df)[(colnames(df) %like% '%Q2d%') & 
                             !(colnames(df) %like% '%TEXT%')]
@@ -268,23 +272,23 @@ ggplot(df.temp, aes(x = factor(value), fill = factor(value))) +
   theme(legend.position = "none") +
   facet_wrap(~variable)
 
-# How effective do you think Group 2's method was for testing whether the data 
-# obey the model?
+print('How effective do you think Group 2s method was for testing whether the data 
+      obey the model?')
 
 ggplot(df, aes(x = factor(Q2c), fill = factor(Q2c))) +
   geom_bar(aes(y = (..count..)/sum(..count..))) +
   ggtitle('Group 2, method effectiveness') +
   theme(legend.position = "none")
 
-# What feature was most important to you in evaluating the effectiveness of Group 
-# 2's methods (either as strengths or weaknesses)?
+print('What feature was most important to you in evaluating the effectiveness of 
+      Group 2s methods (either as strengths or weaknesses)?')
 
 ggplot(df, aes(x = factor(Q144), fill = factor(Q144))) +
   geom_bar(aes(y = (..count..)/sum(..count..))) +
   ggtitle('Group 2, feature of method') +
   theme(legend.position = "none")
 
-# What do you think Group 2 should do next?
+print('What do you think Group 2 should do next?')
 
 cols.temp <- colnames(df)[(colnames(df) %like% '%Q2e%') & 
                             !(colnames(df) %like% '%TEXT%')]
@@ -303,17 +307,17 @@ ggplot(df.temp, aes(x = variable, fill = variable, y = value/nrow(df))) +
 ```
 
 ## Page 3
-```{r}
-# What do you think Group 2 should say about whether their data agree with the 
-# model?
+```{r, echo = FALSE}
+print('What do you think Group 2 should say about whether their data agree with 
+      the model?')
 
 ggplot(df, aes(x = factor(Q3a), fill = factor(Q3a))) +
   geom_bar(aes(y = (..count..)/sum(..count..))) +
   ggtitle('Group 2, data agree with the model') +
   theme(legend.position = "none")
 
-# Which statements below support your reasoning for whether Group 2's data agree 
-# with the model?
+print('Which statements below support your reasoning for whether Group 2s data 
+      agree with the model?')
 
 cols.temp <- colnames(df)[(colnames(df) %like% '%Q145%') & 
                             !(colnames(df) %like% '%TEXT%')]
@@ -330,18 +334,18 @@ ggplot(df.temp, aes(x = variable, fill = variable, y = value/nrow(df))) +
   theme(legend.position = "none",
         axis.text.x = element_text(angle = 30, vjust = 0.5, hjust = 1))
 
-# Which fit do you think Group 2 should use?
+print('Which fit do you think Group 2 should use?')
 
 ggplot(df, aes(x = factor(Q3c), fill = factor(Q3c))) +
   geom_bar(aes(y = (..count..)/sum(..count..))) +
   ggtitle('Group 2, which fit') +
   theme(legend.position = "none")
 
-# Others: Either fix the intercept at zero or change the model., both, I think 
-# the results of both fits should be discussed, including whether there is a 
-# natural explanation for adding an intercept in a revised model
+print('Others: Either fix the intercept at zero or change the model., both, 
+      I think the results of both fits should be discussed, including whether 
+      there is a natural explanation for adding an intercept in a revised model')
 
-# Which items below best reflect your reasoning?
+print('Which items below best reflect your reasoning?')
 
 cols.temp <- colnames(df)[(colnames(df) %like% '%Q3d%') & 
                             !(colnames(df) %like% '%TEXT%')]
@@ -358,7 +362,7 @@ ggplot(df.temp, aes(x = variable, fill = variable, y = value/nrow(df))) +
   theme(legend.position = "none",
         axis.text.x = element_text(angle = 30, vjust = 0.5, hjust = 1))
 
-# What do you think Group 2 should do next?
+print('What do you think Group 2 should do next?')
 
 cols.temp <- colnames(df)[(colnames(df) %like% '%Q147%') & 
                             !(colnames(df) %like% '%TEXT%')]
@@ -377,13 +381,15 @@ ggplot(df.temp, aes(x = variable, fill = variable, y = value/nrow(df))) +
 ```
 
 ## Page 4
-```{r}
-# Which group do you think did a better job of testing the model?
+```{r, echo = FALSE}
+print('Which group do you think did a better job of testing the model?')
 
 ggplot(df, aes(x = factor(Q4a), fill = factor(Q4a))) +
   geom_bar(aes(y = (..count..)/sum(..count..))) +
   ggtitle('Which group did a better job?') +
   theme(legend.position = "none")
+
+print('Compare methods')
 
 cols.temp <- colnames(df)[(colnames(df) %like% '%152%') & 
                             !(colnames(df) %like% '%TEXT%')]
@@ -443,7 +449,7 @@ ggplot(df.temp, aes(x = factor(value), fill = factor(value))) +
   theme(legend.position = "none") +
   facet_wrap(~variable)
 
-# What feature was most important to you for comparing the two groups?
+print('What feature was most important to you for comparing the two groups?')
 
 ggplot(df, aes(x = factor(Q148), fill = factor(Q148))) +
   geom_bar(aes(y = (..count..)/sum(..count..))) +
