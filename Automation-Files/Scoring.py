@@ -2,9 +2,12 @@ import os
 import numpy as np
 import pandas as pd
 import rpy2
-os.environ['R_HOME'] = 'C:\Program Files\R\R-3.5.0'
+os.environ['R_HOME'] = 'C:\Program Files\R\R-4.0.2'
 os.environ['R_USER'] = 'C:\Anaconda3\Lib\site-packages\rpy2'
-os.environ['R_LIBS_USER'] = r'C:\Users\Cole\Documents\R\win-library\3.5'
+os.environ['R_LIBS_USER'] = r'C:\Program Files\R\R-4.0.2\library'
+# os.environ['R_HOME'] = 'C:\Program Files\R\R-3.5.0'
+# os.environ['R_USER'] = 'C:\Anaconda3\Lib\site-packages\rpy2'
+# os.environ['R_LIBS_USER'] = r'C:\Users\Cole\Documents\R\win-library\3.5'
 import rpy2.robjects as robjects
 from rpy2.robjects import pandas2ri
 pandas2ri.activate()
