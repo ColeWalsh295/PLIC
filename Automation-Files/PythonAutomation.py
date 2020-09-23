@@ -122,18 +122,27 @@ def InstructorSurveyControl():
                 if(pd.notnull(InstructorsDF.loc[Index, 'Q10_v2'])):
                     if((len(InstructorsDF.loc[Index, 'Q10_v2']) < 10) | ('/' in InstructorsDF.loc[Index, 'Q10_v2'])):
                         InstructorsDF.loc[Index, 'Q10_v2'] = FixDates(InstructorsDF.loc[Index, 'Q10_v2'])
-                    PreCloseDate = datetime.datetime.strptime(InstructorsDF.loc[Index, 'Q10_v2'], "%m-%d-%Y")
+                    try:
+                        PreCloseDate = datetime.datetime.strptime(InstructorsDF.loc[Index, 'Q10_v2'], "%m-%d-%Y") # catch all for date errors
+                    except:
+                        PreCloseDate = datetime.datetime.now() + datetime.timedelta(days = 14)
                     if(PreCloseDate < datetime.datetime.now()): # If the date is from the middle ages, set the close dates to something in the future
-                        PreCloseDate = datetime.datetime.now()
+                        PreCloseDate = PreCloseDate + datetime.timedelta(days = 14)
                 if(pd.notnull(InstructorsDF.loc[Index, 'Q41_v2'])):
                     if((len(InstructorsDF.loc[Index, 'Q41_v2']) < 10) | ('/' in InstructorsDF.loc[Index, 'Q41_v2'])):
                         InstructorsDF.loc[Index, 'Q41_v2'] = FixDates(InstructorsDF.loc[Index, 'Q41_v2'])
-                    MidCloseDate = datetime.datetime.strptime(InstructorsDF.loc[Index, 'Q41_v2'], "%m-%d-%Y")
+                    try:
+                        MidCloseDate = datetime.datetime.strptime(InstructorsDF.loc[Index, 'Q41_v2'], "%m-%d-%Y")
+                    except:
+                        MidCloseDate = datetime.datetime.now() + datetime.timedelta(days = 30)
                     if(MidCloseDate < datetime.datetime.now()):
-                        MidCloseDate = PreCloseDate + datetime.timedelta(days = 30)
+                        MidCloseDate = MidCloseDate + datetime.timedelta(days = 30)
                 if((len(InstructorsDF.loc[Index, 'Q11_v2']) < 10) | ('/' in InstructorsDF.loc[Index, 'Q11_v2'])):
                     InstructorsDF.loc[Index, 'Q11_v2'] = FixDates(InstructorsDF.loc[Index, 'Q11_v2'])
-                PostCloseDate = datetime.datetime.strptime(InstructorsDF.loc[Index, 'Q11_v2'], "%m-%d-%Y")
+                try:
+                    PostCloseDate = datetime.datetime.strptime(InstructorsDF.loc[Index, 'Q11_v2'], "%m-%d-%Y")
+                except:
+                    PostCloseDate = datetime.datetime.now() + datetime.timedelta(days = 60)
                 if(PostCloseDate < datetime.datetime.now()):
                     PostCloseDate = PostCloseDate + datetime.timedelta(days = 60)
                 CourseYear = PostCloseDate.strftime("%Y")
