@@ -39,11 +39,15 @@ def GetAllData(df, mainDirectory, startDate = None, endDate = None):
             os.mkdir(TermDir + '/PRE')
             os.mkdir(TermDir + '/POST')
 
-        if(Class['Pre-Survey ID'] != ''):
-            os.chdir(TermDir + '/PRE')
-            DownloadResponses(Class['Pre-Survey ID'])
-        os.chdir(TermDir + '/POST')
-        DownloadResponses(Class['Post-Survey ID'])
+        try: # some surveys are not accessible to the new CDER account. Remove this except statement once all surveys are transferred to CDER
+            if(Class['Pre-Survey ID'] != ''):
+                os.chdir(TermDir + '/PRE')
+                DownloadResponses(Class['Pre-Survey ID'])
+            os.chdir(TermDir + '/POST')
+            DownloadResponses(Class['Post-Survey ID'])
+            print(Class['ID'])
+        except:
+            continue
 
     return 0
 
@@ -108,8 +112,11 @@ def ConcatMatchedSurveys(PreFileList, PostFileList, PreMatchedLocation, PostMatc
                 continue
             print(f_pre)
             Class_ID = 'R_' + f_pre.split('_')[-2] # Split of the underscore at the end for the new format
-            NPre, NPost, dfPre, dfPost = Valid_Matched.ValMat(PRE = pd.read_csv(f_pre, skiprows = [1], dtype = {'Q5a':'object'}),
-                                                              POST = pd.read_csv(f_post, skiprows = [1], dtype = {'Q5a':'object'}))
+            try: # if the surveys don't match, we'll pass
+                NPre, NPost, dfPre, dfPost = Valid_Matched.ValMat(PRE = pd.read_csv(f_pre, skiprows = [1], dtype = {'Q5a':'object'}),
+                                                                  POST = pd.read_csv(f_post, skiprows = [1], dtype = {'Q5a':'object'}))
+            except:
+                continue
             if('Survey' not in dfPre.columns): # if no open-response surveys, denote all surveys as closed-response
                 dfPre['Survey'] = 'C'
             if('Survey' not in dfPost.columns):
@@ -331,6 +338,7 @@ def Identify(file, header_file, file_out, Class_ID = None):
     df = df.rename(columns = {'PreScores':'TotalScores_PRE', 'PostScores':'TotalScores_POST'})
 
     if(Class_ID is not None):
+        df = df.drop(columns = ['Gender', 'Major', 'URM_Status', 'Class_Standing'])
         df.headers = pd.read_csv(header_file)
         df = pd.concat([df.headers, df], join = 'inner')
     df.to_csv(file_out, index = False)
