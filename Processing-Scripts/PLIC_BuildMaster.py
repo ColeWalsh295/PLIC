@@ -4,14 +4,48 @@ import numpy as np
 import pandas as pd
 from glob import glob
 os.chdir('C:/Users/Cole/Documents/GitHub/PLIC/Automation-Files/')
+from PythonAutomation import DownloadResponses
 import Valid_Matched
 import Scoring
+import datetime
 
 os.chdir('C:/Users/Cole/Documents/DATA/PLIC_DATA/')
 Weights = pd.read_excel('Weights_May2019.xlsx').transpose()[0]
 Basedf = pd.read_csv('PLIC_May2019.csv', nrows = 1) # current PLIC version
 MainSurveys_Folder = 'SurveysMay2019/' # where are current version surveys
 Questions = ['Q1b', 'Q1d', 'Q1e', 'Q2b', 'Q2d', 'Q2e', 'Q3b', 'Q3d', 'Q3e', 'Q4b']
+
+def GetAllData(df, mainDirectory, startDate = None, endDate = None):
+    """Download and validate all surveys within a given date range.
+
+    Keyword arguments:
+    df -- pandas dataframe of master PLIC data file with instructor responses
+    mainDirectory -- directory to download PLIC data
+    startDate -- beginning of date range of survey close dates to download (format = %m/%d/%Y)
+    endDate -- end of date range of survey close dates to download (format = %m/%d/%Y)
+    """
+
+    df['Post-Survey Closed'] = pd.to_datetime(df['Post-Survey Closed'])
+    if(startDate is not None):
+        df = df.loc[df['Post-Survey Closed'] > datetime.datetime.strptime(startDate, '%m/%d/%Y')]
+    if(endDate is not None):
+        df = df.loc[df['Post-Survey Closed'] < datetime.datetime.strptime(endDate, '%m/%d/%Y')]
+
+    df = df.reset_index(drop = True)
+    for Index, Class in df.iterrows():
+        TermDir = mainDirectory + "/" + str(Class['Season']) + str(Class['Course Year'])
+        if not os.path.exists(TermDir):
+            os.mkdir(TermDir, 755)
+            os.mkdir(TermDir + '/PRE')
+            os.mkdir(TermDir + '/POST')
+            
+        if(Class['Pre-Survey ID'] != ''):
+            os.chdir(TermDir + '/PRE')
+            DownloadResponses(Class['Pre-Survey ID'])
+        os.chdir(TermDir + '/POST')
+        DownloadResponses(Class['Post-Survey ID'])
+
+    return 0
 
 def ConcatValidSurveys(FileList, ValidLocation, ValidFileName):
     """Validate and concatenate surveys.
@@ -249,14 +283,23 @@ def AddCourseInfo(Students_FILE, Courses_FILE):
 
     return(df)
 
-def Identify(file, file_other, header_file, file_out, Class_ID):
+def Identify(file, header_file, file_out, Class_ID = None):
+    """Create identifiable data file to be sent to instructor or uploaded to PLIC dashboard.
+
+    Keyword arguments:
+    file -- master csv file containing matched students' pre and posttest scores
+    header_file -- csv file containing header information
+    file_out -- name of outputted csv file
+    Class_ID -- Class_ID of specific class that idenntifiable data is requested for; if retrieving data for dashboard, set as None
+    """
 
     Questions = ['Q1B', 'Q1D', 'Q1E', 'Q2B', 'Q2D', 'Q2E', 'Q3B', 'Q3D', 'Q3E', 'Q4B']
 
     df = pd.read_csv(file)
-    df = df.loc[df['Class_ID'] == Class_ID, :]
+    if(Class_ID is not None):
+        df = df.loc[df['Class_ID'] == Class_ID, :]
 
-    dfOther = pd.read_csv(file_other)
+    dfOther = pd.read_csv(file)
     dfOther_Pre = dfOther.loc[dfOther['Survey_x'] == 'C', [col + 's_x' for col in Questions]]
     dfOther_Post = dfOther.loc[dfOther['Survey_y'] == 'C', [col + 's_y' for col in Questions]]
     dfOther_Pre.columns = dfOther_Pre.columns.str.replace(r's_x$', 's')
@@ -269,8 +312,6 @@ def Identify(file, file_other, header_file, file_out, Class_ID):
     df_Post.columns = df_Post.columns.str.replace(r's_y$', 's')
     pre_scores = Scoring.CalcFactorScores(dfOther, df_Pre).rename(columns = {'models':'models_PRE', 'methods':'methods_PRE', 'actions':'actions_PRE'}).set_index(pd.Index(df_Pre['index']))
     post_scores = Scoring.CalcFactorScores(dfOther, df_Post).rename(columns = {'models':'models_POST', 'methods':'methods_POST', 'actions':'actions_POST'}).set_index(pd.Index(df_Post['index']))
-    print(pre_scores)
-    print(post_scores)
     df = pd.concat([df, pre_scores, post_scores], axis = 1, join = 'outer')
 
     df['ID'] = df['Q5a_y'].fillna(df['Q5a_x'])
@@ -279,6 +320,9 @@ def Identify(file, file_other, header_file, file_out, Class_ID):
 
     df.columns = df.columns.str.replace(r's_x$', '_PRE')
     df.columns = df.columns.str.replace(r's_y$', '_POST')
+    if(Class_ID is None):
+        df.columns = df.columns.str.replace(r'_x$', '_PRE')
+        df.columns = df.columns.str.replace(r'_y$', '_POST')
     df = df.rename(columns = {'PreScores':'TotalScores_PRE', 'PostScores':'TotalScores_POST'})
 
     df.headers = pd.read_csv(header_file)
@@ -287,7 +331,6 @@ def Identify(file, file_other, header_file, file_out, Class_ID):
     return df
 
 def Deidentify(file_id, file_out):
-
     # legacy; remove in future version since we can provide identifiable data now
     def CrossTab(df):
         df_tab = df.loc[:, ['Class_ID', 'Gender', 'URM_Status', 'Major', 'Class_Standing']]
