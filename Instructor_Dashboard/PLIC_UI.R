@@ -37,8 +37,10 @@ ScalePlotUI <- function(id, Demos = TRUE){
                                         'Suggesting Follow-ups', 'Total Score')),
              br(),
              radioButtons(ns("demographic"), 'Separate by:', 
-                          choiceNames = c('None', 'Gender', 'URM Status', 'Major', 'Class Standing'),
-                          choiceValues = c('None', 'Gender', 'URM', 'Major', 'Class_Standing'))
+                          choiceNames = c('None', 'Gender', 'URM Status', 'Major', 
+                                          'Class Standing'),
+                          choiceValues = c('None', 'Gender', 'URM', 'Major', 
+                                           'Class_Standing'))
       ),
       column(8, plotOutput(ns("plotScale")))
     )

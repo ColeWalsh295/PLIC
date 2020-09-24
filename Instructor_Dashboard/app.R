@@ -14,9 +14,9 @@ source('PLIC_DataProcessing.R', local = TRUE)
 source('PLIC_UI.R', local = TRUE)
 source('PLIC_Server.R', local = TRUE)
 
-Header.df <- fread('Headers.csv')
+Header.df <- read_csv('Headers.csv')
 
-PLIC.Complete.df <- fread('Complete_Concat_DeIdentified.csv')
+PLIC.Complete.df <- fread('Complete_Concat_CourseInfo_Identified.csv')
 PLIC.Complete.df$Student.ID.Anon <- row.names(PLIC.Complete.df)
 PLIC.Complete.df <- PrePost.Long(PLIC.Complete.df)
 
@@ -26,23 +26,10 @@ PLIC.FR <- PLIC.Complete.df %>%
 PLIC.CR <- PLIC.Complete.df %>%
   filter(Survey == 'C')
 
-# Hypothesized model evaluated in prior work
-PLIC.model.HYP <- ' models  =~ Q1B + Q2B + Q3B + Q3D
-                    methods =~ Q1D + Q2D + Q4B
-                    actions =~ Q1E + Q2E + Q3E '
-
-# only use CR for model development
-mod.cfa.HYP <- cfa(PLIC.model.HYP, data = PLIC.CR, std.lv = TRUE, estimator = 'ML')
-
-scores.df <- data.frame(lavPredict(mod.cfa.HYP))
-PLIC.CR <- cbind(PLIC.CR, scores.df) # merge factor scores back to the dataframe
-
-PLIC.Merged.df <- fread('Complete_Concat_DeIdentified.csv') %>%
-  filter(Survey_x == 'C' & Survey_y == 'C') # separate data.frame for matched surveys
+PLIC.Merged.df <- fread('Complete_Concat_CourseInfo_Identified.csv') %>%
+  filter(Survey_PRE == 'C' & Survey_POST == 'C') # separate data.frame for matched surveys
 PLIC.Merged.df$Student.ID.Anon <- row.names(PLIC.Merged.df)
 PLIC.Merged.df <- PrePost.Long(PLIC.Merged.df)
-scores.df <- data.frame(lavPredict(mod.cfa.HYP, newdata = PLIC.Merged.df))
-PLIC.Merged.df <- cbind(PLIC.Merged.df, scores.df) # Merge factor scores back to the dataframe
 
 ### UI code ##############################################################################
 
@@ -129,31 +116,31 @@ server = function(input, output) {
   
   ### Your Class tab ###
   
-  PLIC.Class <- callModule(DownloadClassData, 'Class.Main.Download', data = df, 
-                           Type = Data.Include)
-  # Shiny update 1.5.0 introduced moduleServer, which can be used in lieu of callModule
-  # for maintainability
+  PLIC.Class <- callModule(DownloadClassData, 'Class.Main.Download', data = df)
+  # Shiny update 1.5.0 introduced moduleServer, which can be used in lieu of 
+  # callModule for maintainability
   callModule(ClassStatistics, 'Class.Main.Statistics', data = PLIC.Class)
-  # set demographic as reactive to update two plots on this tab simultaneously with
-  # demographic input
+  # set demographic as reactive to update two plots on this tab simultaneously 
+  # with demographic input
   demographic <- reactiveVal()
   demographic <- callModule(ScalePlot, 'Class.Main.Scale', data = PLIC.Class)
-  callModule(QuestionPlot, 'Class.Main.Question', data = PLIC.Class, Demo = demographic)
-  callModule(ResponsesPlot, 'Class.Main.Responses', data = PLIC.Class, Demo = demographic)
+  callModule(QuestionPlot, 'Class.Main.Question', data = PLIC.Class, 
+             Demo = demographic)
+  callModule(ResponsesPlot, 'Class.Main.Responses', data = PLIC.Class, 
+             Demo = demographic)
   
   ### Compare Classes tab ###
   
-  PLIC.Class1 <- callModule(DownloadClassData, 'Class1.Download', data = df, 
-                            Type = Data.Include)
+  PLIC.Class1 <- callModule(DownloadClassData, 'Class1.Download', data = df)
   callModule(ClassStatistics, 'Class1.Statistics', data = PLIC.Class1)
-  PLIC.Class2 <- callModule(DownloadClassData, 'Class2.Download', data = df, 
-                            Type = Data.Include)
+  PLIC.Class2 <- callModule(DownloadClassData, 'Class2.Download', data = df)
   callModule(ClassStatistics, 'Class2.Statistics', data = PLIC.Class2)
 
   PLIC.Compare <- reactive({
     rbind(PLIC.Class1(), PLIC.Class2())
   })
-  callModule(ScalePlot, 'Class.Compare.Scale', data = PLIC.Compare, Class.var = 'Class_ID')
+  callModule(ScalePlot, 'Class.Compare.Scale', data = PLIC.Compare, 
+             Class.var = 'Class_ID')
   question.compare <- reactiveVal()
   question.compare <- callModule(QuestionPlot, 'Class.Compare.Question', 
                                  data = PLIC.Compare,
@@ -163,8 +150,8 @@ server = function(input, output) {
   
   ### Compare your class to national dataset tab ###
   
-  PLIC.Class.You_temp <- callModule(DownloadClassData, 'Class.You.Download', data = df, 
-                                    Type = Data.Include)
+  PLIC.Class.You_temp <- callModule(DownloadClassData, 'Class.You.Download', 
+                                    data = df)
   callModule(ClassStatistics, 'Class.You.Statistics', data = PLIC.Class.You_temp)
   
   PLIC.Class.You <- reactive({
