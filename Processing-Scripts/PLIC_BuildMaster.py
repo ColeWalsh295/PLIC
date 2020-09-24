@@ -330,8 +330,9 @@ def Identify(file, header_file, file_out, Class_ID = None):
         df.columns = df.columns.str.replace(r'_y$', '_POST')
     df = df.rename(columns = {'PreScores':'TotalScores_PRE', 'PostScores':'TotalScores_POST'})
 
-    df.headers = pd.read_csv(header_file)
-    df = pd.concat([df.headers, df], join = 'inner')
+    if(Class_ID is not None):
+        df.headers = pd.read_csv(header_file)
+        df = pd.concat([df.headers, df], join = 'inner')
     df.to_csv(file_out, index = False)
     return df
 
