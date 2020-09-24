@@ -1,20 +1,39 @@
 # Module server functions
 # corresponding UI functions use the same function name with 'UI' appended to the end
 
-DownloadClassData <- function(input, output, session, data) {
+DownloadClassData <- function(input, output, session, data, ClassID = NULL) {
   # retrieves relevant class data based on user input and provides downloadable data to
   # write to .csv
-
-  class.CR <- reactive({
-    class.CR <- PLIC.CR[PLIC.CR[, 'Class_ID'] == input$classID,]
-    return(class.CR)
+  
+  observe({
+    if(!is.null(ClassID)){
+      updateTextInput(session, 'classID', value = ClassID())
+    }
   })
   
-  data.class <- reactive({
+  data.class <- eventReactive(input$classID, {
+    # fixed bug where app would crash if instructors typed out ID rather than copying and
+    # pasting...or if they just messed up
+    validate(
+      need(input$classID %in% data()$Class_ID, 'Enter a valid class ID')
+    )
+    # data.class <- subset(data(), Class_ID == input$classID)
+    class.CR <- PLIC.CR[PLIC.CR[, 'Class_ID'] == input$classID,]
     class.FR <- PLIC.FR[PLIC.FR[, 'Class_ID'] == input$classID,]
-    data.class <- bind_rows(class.CR(), class.FR)
+    data.class <- bind_rows(class.CR, class.FR)
     return(data.class)
   })
+  
+  # class.CR <- reactive({
+  #   class.CR <- PLIC.CR[PLIC.CR[, 'Class_ID'] == input$classID,]
+  #   return(class.CR)
+  # })
+  # 
+  # data.class <- reactive({
+  #   class.FR <- PLIC.FR[PLIC.FR[, 'Class_ID'] == input$classID,]
+  #   data.class <- bind_rows(class.CR(), class.FR)
+  #   return(data.class)
+  # })
   
   data.out <- reactive({
     # we put things in long form for plotting, but we put things in wide form to give to

@@ -40,7 +40,7 @@ Your_tab = tabItem(
   h2("View of your class"),
   
   DownloadClassDataUI('Class.Main.Download', label = 'Your Class ID:', 
-                      value = 'R_2xOT2Y1NtNiseCk'),
+                      value = 'R_'),
   br(),
   ClassStatisticsOutput('Class.Main.Statistics'),
   br(),
@@ -58,11 +58,11 @@ Compare_tab = tabItem(
   h2("Compare two of your classes"),
 
   DownloadClassDataUI('Class1.Download', label = 'Your first Class ID:',
-                      value = 'R_2xOT2Y1NtNiseCk'),
+                      value = 'R_'),
   br(),
   ClassStatisticsOutput('Class1.Statistics'),
   DownloadClassDataUI('Class2.Download', label = 'Your second Class ID:',
-                      value = 'R_RKRNIWFu1gZuSPf'),
+                      value = 'R_'),
   br(),
   ClassStatisticsOutput('Class2.Statistics'),
   br(),
@@ -80,7 +80,7 @@ Overall_tab = tabItem(
   h2("Compare your classes to other classes"),
   
   DownloadClassDataUI('Class.You.Download', label = 'Your Class ID:',
-                      value = 'R_2xOT2Y1NtNiseCk'),
+                      value = 'R_'),
   br(),
   ClassStatisticsOutput('Class.You.Statistics'),
   br(),
@@ -116,7 +116,9 @@ server = function(input, output) {
   
   ### Your Class tab ###
   
-  PLIC.Class <- callModule(DownloadClassData, 'Class.Main.Download', data = df)
+  CID <- NULL # set initial CID as null, update with input to retain CID between tabs
+  PLIC.Class <- callModule(DownloadClassData, 'Class.Main.Download', data = df, 
+                           ClassID = CID)
   # Shiny update 1.5.0 introduced moduleServer, which can be used in lieu of 
   # callModule for maintainability
   callModule(ClassStatistics, 'Class.Main.Statistics', data = PLIC.Class)
@@ -131,7 +133,8 @@ server = function(input, output) {
   
   ### Compare Classes tab ###
   
-  PLIC.Class1 <- callModule(DownloadClassData, 'Class1.Download', data = df)
+  PLIC.Class1 <- callModule(DownloadClassData, 'Class1.Download', data = df, 
+                            ClassID = CID)
   callModule(ClassStatistics, 'Class1.Statistics', data = PLIC.Class1)
   PLIC.Class2 <- callModule(DownloadClassData, 'Class2.Download', data = df)
   callModule(ClassStatistics, 'Class2.Statistics', data = PLIC.Class2)
@@ -151,7 +154,19 @@ server = function(input, output) {
   ### Compare your class to national dataset tab ###
   
   PLIC.Class.You_temp <- callModule(DownloadClassData, 'Class.You.Download', 
-                                    data = df)
+                                    data = df, ClassID = CID)
+  CID <- reactive({
+    # update CID with input from each tab...this reactive variable ensures that text input
+    # on one tab carries over to subsequent tabs so instructors don't have to re-type IDs
+    if(input$tabs == 'Your_Class'){
+      CID <- PLIC.Class()[1, 'Class_ID']
+    } else if(input$tabs == 'Compare_Classes'){
+      CID <- PLIC.Class1()[1, 'Class_ID']
+    } else {
+      CID <- PLIC.Class.You_temp()[1, 'Class_ID']
+    }
+    return(CID)
+  })
   callModule(ClassStatistics, 'Class.You.Statistics', data = PLIC.Class.You_temp)
   
   PLIC.Class.You <- reactive({
@@ -184,6 +199,7 @@ server = function(input, output) {
 dhead = dashboardHeader(title = "PLIC Dashboard")
 
 dside = dashboardSidebar(sidebarMenu(
+  id = 'tabs',
   radioButtons('matched', 'Type of Data:', choices = c('Matched', 'All Valid')),
   menuItem("View your class", tabName = "Your_Class", icon = icon("dashboard")),
   menuItem(HTML("Compare two of<br>your classes"), tabName = "Compare_Classes", 
