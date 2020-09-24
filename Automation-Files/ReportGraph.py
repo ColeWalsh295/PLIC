@@ -127,7 +127,7 @@ def GenerateTotalScoresGraph(df):
     axes[0, 1].legend().remove()
 
     plt.sca(axes[1, 0])
-    sns.boxplot(x = 'Data', y = 'models', hue = 'Survey', hue_order = Survey_order, data = df, linewidth = 0.5, palette = {'PRE':'#ece7f2', 'MID':'#a6bddb', 'POST':'#2b8cbe'})
+    sns.boxplot(x = 'Data', y = 'actions', hue = 'Survey', hue_order = Survey_order, data = df, linewidth = 0.5, palette = {'PRE':'#ece7f2', 'MID':'#a6bddb', 'POST':'#2b8cbe'})
     plt.xticks((0, 1), ('Your Class', 'Other Classes'))
     plt.xlabel('')
     plt.ylabel('Score')
