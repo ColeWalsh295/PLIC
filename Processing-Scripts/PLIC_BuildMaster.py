@@ -38,7 +38,7 @@ def GetAllData(df, mainDirectory, startDate = None, endDate = None):
             os.mkdir(TermDir, 755)
             os.mkdir(TermDir + '/PRE')
             os.mkdir(TermDir + '/POST')
-            
+
         if(Class['Pre-Survey ID'] != ''):
             os.chdir(TermDir + '/PRE')
             DownloadResponses(Class['Pre-Survey ID'])
@@ -317,6 +317,11 @@ def Identify(file, header_file, file_out, Class_ID = None):
     df['ID'] = df['Q5a_y'].fillna(df['Q5a_x'])
     df['LastName'] = df['Q5b_y'].fillna(df['Q5b_x'])
     df['FirstName'] = df['Q5c_y'].fillna(df['Q5c_x'])
+
+    df = SetGender(df)
+    df = SetURM(df)
+    df = SetMajor(df)
+    df = SetClassStanding(df)
 
     df.columns = df.columns.str.replace(r's_x$', '_PRE')
     df.columns = df.columns.str.replace(r's_y$', '_POST')
