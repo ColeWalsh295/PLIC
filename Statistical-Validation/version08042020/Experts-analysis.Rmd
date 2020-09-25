@@ -18,24 +18,27 @@ theme_set(theme_fivethirtyeight())
 ```{r, echo = FALSE, results = FALSE}
 file = 'C:/Users/Cole/Documents/DATA/PLIC_DATA/Experts/Experts_v08042020_09202020.csv'
 
+# info data.frame from second row of file
 info <- data.frame(lapply(read.csv(file, nrows = 1), 
                           FUN = function(x) gsub("^.*- ", "", x)))
 
+# headers from first row
 headers = read.csv(file, header = F, nrows = 1, as.is = T)
 headers <- data.frame(lapply(headers, function(x) sub(' ', '.', x)))
 df = read.csv(file, header = F)
-df <- df %>%
-  tail(., nrow(df) - 3) %>%
+df <- df %>% # filtering
+  tail(., nrow(df) - 3) %>% # get rid of first three rows, no data there
   `colnames<-`(headers) %>%
   filter(Finished == 1) %>%
-  filter((Qt1_Page.Submit > 30) | (Qt2_Page.Submit > 30) | (Qt3_Page.Submit > 30) |
-           (Qt4_Page.Submit > 30)) %>%
-  filter(!(Q6a %in% c(1, 4)))
+  filter((Qt1_Page.Submit > 30) | (Qt2_Page.Submit > 30) | 
+           (Qt3_Page.Submit > 30) | (Qt4_Page.Submit > 30)) %>%
+  filter(!(Q6a %in% c(1, 4))) # expertise filter
 
 # check which entries to manually delete
 df[df$Q6a %in% c(8, 9), c('Q6a', 'Q6a_8_TEXT')]
 df <- df[!(row.names(df) %in% c(4, 16)),]
 
+# a bunch of recoding because we were not at all consistent within Qualtrics
 df <- recode2(df, vars = colnames(df)[colnames(df) %like any% c('%Q139%',
                                                                 '%Q140%', 
                                                                 '%Q141%',
@@ -52,12 +55,11 @@ df <- recode2(df, vars = c('Q3c'),
               recodes = "1 = 'fixed at zero'; 2 = 'not fixed at zero'; 
                           3 = 'other'")
 df <- recode2(df, vars = c('Q4a'), 
-                recodes = "1 = 'Group 1'; 2 = 'Group 2'; 3 = 'Both'; 
-                            4 = 'Neither'")
+              recodes = "1 = 'Group 1'; 2 = 'Group 2'; 3 = 'Both'; 4 = 'Neither'")
 df <- recode2(df, vars = colnames(df)[colnames(df) %like any% c('%Q152%',
                                                                 '%Q153%', 
                                                                 '%Q154%')], 
-                recodes = "1 = '1'; 2 = '2'; 3 = 'B'; 4 = 'N'")
+              recodes = "1 = '1'; 2 = '2'; 3 = 'B'; 4 = 'N'")
 ```
 
 # Analysis
@@ -75,15 +77,19 @@ ggplot(df, aes(x = factor(Q1a), fill = factor(Q1a))) +
 print('Which statements below support your reasoning for whether Group 1s data 
       agree with the model?')
 
+# get all columns for this multiple response questions
 cols.temp <- colnames(df)[(colnames(df) %like% '%Q1b%') & 
                             !(colnames(df) %like% '%TEXT%')]
 
+# melt to one column
 df.temp <- df[, cols.temp] %>%
   melt(., measure.vars = cols.temp) %>%
   mutate(value = ifelse(value == 1, 1, 0))
 
+# print info for each response
 data.frame(t(info[, cols.temp]))
 
+# normalize y-axis, so its fraction of experts...maybe I should add a label...?
 ggplot(df.temp, aes(x = variable, fill = variable, y = value/nrow(df))) +
   geom_bar(stat = 'identity')  +
   ggtitle('Group 1, reasoning') +
@@ -95,6 +101,7 @@ print('Group 1 evaluate methods')
 cols.temp <- colnames(df)[(colnames(df) %like% '%Q139%') & 
                             !(colnames(df) %like% '%TEXT%')]
 
+# we'll facet these Likert questions, so they're all in one plot
 df.temp <- df[, cols.temp] %>%
   melt(., measure.vars = cols.temp) %>%
   mutate(variable = case_when(
