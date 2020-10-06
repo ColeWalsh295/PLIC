@@ -15,7 +15,7 @@ Basedf = pd.read_csv('PLIC_May2019.csv', nrows = 1) # current PLIC version
 MainSurveys_Folder = 'SurveysMay2019/' # where are current version surveys
 Questions = ['Q1b', 'Q1d', 'Q1e', 'Q2b', 'Q2d', 'Q2e', 'Q3b', 'Q3d', 'Q3e', 'Q4b']
 
-def GetAllData(df, mainDirectory, startDate = None, endDate = None):
+def GetAllData(df, mainDirectory, startDate = None, endDate = None, Completed = True):
     """Download and validate all surveys within a given date range.
 
     Keyword arguments:
@@ -23,13 +23,22 @@ def GetAllData(df, mainDirectory, startDate = None, endDate = None):
     mainDirectory -- directory to download PLIC data
     startDate -- beginning of date range of survey close dates to download (format = %m/%d/%Y)
     endDate -- end of date range of survey close dates to download (format = %m/%d/%Y)
+    Completed -- binary; whether to retrieve only data where all surveys have closed
     """
 
+    df['Pre-Survey Closed'] = pd.to_datetime(df['Pre-Survey Closed'])
     df['Post-Survey Closed'] = pd.to_datetime(df['Post-Survey Closed'])
     if(startDate is not None):
-        df = df.loc[df['Post-Survey Closed'] > datetime.datetime.strptime(startDate, '%m/%d/%Y')]
+        if Completed:
+            df = df.loc[df['Post-Survey Closed'] > datetime.datetime.strptime(startDate, '%m/%d/%Y')]
+        else:
+            df = df.loc[(df['Pre-Survey Closed'] > datetime.datetime.strptime(startDate, '%m/%d/%Y')) | (df['Post-Survey Closed'] > datetime.datetime.strptime(startDate, '%m/%d/%Y'))]
     if(endDate is not None):
-        df = df.loc[df['Post-Survey Closed'] < datetime.datetime.strptime(endDate, '%m/%d/%Y')]
+        if Completed:
+            df = df.loc[df['Post-Survey Closed'] > datetime.datetime.strptime(endDate, '%m/%d/%Y')]
+        else:
+            df = df.loc[(df['Pre-Survey Closed'] > datetime.datetime.strptime(endDate, '%m/%d/%Y')) | (df['Post-Survey Closed'] > datetime.datetime.strptime(endDate, '%m/%d/%Y'))]
+
 
     df = df.reset_index(drop = True)
     for Index, Class in df.iterrows():
