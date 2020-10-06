@@ -1,7 +1,7 @@
 ---
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 # Load necessary packages
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
@@ -44,7 +44,7 @@ df <- recode2(df, vars = colnames(df)[colnames(df) %like any% c('%Q139%',
                                                                 '%Q141%',
                                                                 '%Q157%')], 
               recodes = "6 = 1; 7 = 2; 9 = 3; 10 = 4")
-df <- recode2(df, vars = c('Q1a'), recodes = "1 = 1; 2 = 2; 5 = 3; 3 = 4")
+df <- recode2(df, vars = c('Q1a'), recodes = "1 = 1; 2 = 2; 3 = 4; 5 = 3")
 df <- recode2(df, vars = c('Q133'), recodes = "1 = 1; 2 = 2; 5 = 3; 6 = 4")
 df <- recode2(df, vars = c('Q1a', 'Q2a', 'Q3a'), recodes = "1 = 'Support'; 
               2 = 'Refute'; 3 = 'Neither'; 4 = 'More evidence'")
