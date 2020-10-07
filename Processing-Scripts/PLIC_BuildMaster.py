@@ -291,10 +291,25 @@ def AddCourseInfo(Students_FILE, Courses_FILE):
     """
 
     df_students = pd.read_csv(Students_FILE)
-    df_courses = pd.read_csv(Courses_FILE, skiprows = [1], usecols = ['V1', 'Q7']).rename(columns = {'V1':'Class_ID', 'Q7':'Course_Level'})
-    df_courses['Course_Level'] = df_courses['Course_Level'].map({1:'Intro - Algebra', 2:'Intro - Calculus', 3:'Sophomore',
-                                                                 4:'Junior', 5:'Senior'})
-    df = df_students.merge(df_courses, on = 'Class_ID', how = 'left')
+    df_courses = pd.read_csv(Courses_FILE, skiprows = [1])
+
+    df_courses['Q6'] = df_courses['Q6'].str.extract('(\d+)').fillna('').astype(str).squeeze()
+    df_courses['anon_course_id'] = (df_courses['Q6'] + df_courses['Q4'].apply(str)).astype('category').cat.codes
+    df_courses['anon_institution_id'] = df_courses['Q4'].astype('category').cat.codes
+
+    df_courses = df_courses.rename(columns = {'Q7':'Lab_level', 'Q4':'Institution', 'Q19':'Institution_type', 'Q27':'Lab_purpose'})
+    df_courses['Lab_level'] = df_courses['Lab_level'].map({1:'Intro-Algebra', 2:'Intro-Calculus', 3:'Sophomore', 4:'Junior', 5:'Senior', 6:'HighSchool',
+                                                            7:'Graduate'})
+    df_courses['Institution_type'] = df_courses['Institution_type'].map({1:'2 year college', 2:'4 year college', 3:'Masters granting institution',
+                                                                            4:'PhD granting institution', 5:'HighSchool'})
+    df_courses['Lab_purpose'] = df_courses['Lab_purpose'].map({1:'Reinforce concepts', 2:'Develop lab skills', 3:'Both about equally'})
+
+    df = df_students.merge(df_courses, left_on = 'Class_ID', right_on = 'V1', how = 'left').drop_duplicates(subset = ['V1_x', 'V1_y'])
+
+    df['anon_student_id'] = (df['Q5b_y'].fillna(df['Q5b_x']).apply(str).str.lower() +
+                                df['Q5c_y'].fillna(df['Q5c_x']).apply(str).str.lower()).str.replace('\W', '')
+    df['anon_student_id'] = (df['anon_student_id'] + '-' + df['anon_institution_id'].astype(str)).astype('category').cat.codes
+
     df.to_csv('./Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv', index = False)
 
     return(df)
