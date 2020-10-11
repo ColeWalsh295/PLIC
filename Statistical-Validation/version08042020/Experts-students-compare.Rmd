@@ -15,6 +15,9 @@ library(ryouready)
 library(reshape2)
 library(stringr)
 library(ggthemes)
+library(cluster)
+library(factoextra)
+library(DescTools)
 theme_set(theme_fivethirtyeight())
 ```
 
@@ -97,7 +100,9 @@ df[is.na(df)] <- ''
 
 # Analysis
 
-## Page 1
+## Raw distributions
+
+### Page 1
 ```{r, echo = FALSE}
 print('What do you think Group 1 should say about whether their data agree with 
       the model?')
@@ -231,7 +236,7 @@ ggplot(df.temp, aes(x = variable, fill = variable, y = value)) +
   facet_wrap(~Respondent, scales = 'free_y')
 ```
 
-## Page 2
+### Page 2
 ```{r, echo = FALSE}
 print('What do you think Group 2 should say about whether their data agree with 
       the model?')
@@ -364,7 +369,7 @@ ggplot(df.temp, aes(x = variable, fill = variable, y = value)) +
   facet_wrap(~Respondent, scales = 'free_y')
 ```
 
-## Page 3
+### Page 3
 ```{r, echo = FALSE}
 print('What do you think Group 2 should say about whether their data agree with 
       the model?')
@@ -441,7 +446,7 @@ ggplot(df.temp, aes(x = variable, fill = variable, y = value)) +
   facet_wrap(~Respondent, scales = 'free_y')
 ```
 
-## Page 4
+### Page 4
 ```{r, echo = FALSE}
 print('Which group do you think did a better job of testing the model?')
 
@@ -521,7 +526,128 @@ ggplot(df, aes(x = factor(Q148), fill = factor(Q148))) +
   facet_wrap(~Respondent, scales = 'free_y')
 ```
 
+## Evaluate isolated versus comparison questions
 
+### Raw bins
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+theme_set(theme_gdocs())
+Group.compare.scatter <- function(df, Group1, Group2, Compare, Question){
+  df.temp <- df[, c(Group1, Group2, Compare)]
+  colnames(df.temp) <- c('Group.1', 'Group.2', 'Comparison')
+  df.temp$Group.1 <- as.numeric(df.temp$Group.1)
+  df.temp$Group.2 <- as.numeric(df.temp$Group.2)
+
+  df.summary <- df.temp %>%
+    filter(!is.na(Group.1) & !is.na(Group.2) & (Comparison != '')) %>%
+    group_by(Group.1, Group.2, Comparison) %>%
+    summarize(N = n())
+
+  df.summary$Group.1 <- df.summary$Group.1 - 
+    0.1 * (df.summary$Comparison %in% c('1', 'B')) + 
+    0.1 * (df.summary$Comparison %in% c('2', 'N'))
+  df.summary$Group.2 <- df.summary$Group.2 - 
+    0.1 * (df.summary$Comparison %in% c('B', 'N')) + 
+    0.1 * (df.summary$Comparison %in% c('1', '2'))
+
+  print(ggplot(df.summary, aes(x = Group.1, y = Group.2, color = Comparison, 
+                               size = N)) +
+          geom_point() +
+          scale_size_area() +
+          labs(x = 'Group 1', y = 'Group 2', title = Question))
+
+}
+
+df.students = df[df$Respondent == 'Student',]
+Group.compare.scatter(df.students, 'Q139_1', 'Q2d_1', 'Q152_1', 'Equipment used')
+Group.compare.scatter(df.students, 'Q139_2', 'Q2d_2', 'Q152_2', 
+                      'Variables measured')
+Group.compare.scatter(df.students, 'Q139_3', 'Q2d_3', 'Q152_3', 
+                      'Variables controlled')
+
+Group.compare.scatter(df.students, 'Q140_1', 'Q142_1', 'Q153_1', 'N trials')
+Group.compare.scatter(df.students, 'Q140_2', 'Q142_2', 'Q153_2', 'N masses')
+Group.compare.scatter(df.students, 'Q140_3', 'Q142_3', 'Q153_3', 'N bounces')
+
+Group.compare.scatter(df.students, 'Q141_1', 'Q157_1', 'Q154_1', 'Explanations')
+Group.compare.scatter(df.students, 'Q141_2', 'Q157_2', 'Q154_2', 'Analysis')
+Group.compare.scatter(df.students, 'Q141_3', 'Q157_3', 'Q154_3', 
+                      'Similar k values')
+Group.compare.scatter(df.students, 'Q141_4', 'Q157_4', 'Q154_4', 
+                      'Uncertainty in data')
+```
+
+### Evaluate clusters
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+df.cluster <- df.students[, c('Q139_1', 'Q2d_1', 'Q139_2', 'Q2d_2', 'Q139_3', 
+                              'Q2d_3', 'Q140_1', 'Q142_1', 'Q140_2', 'Q142_2', 
+                              'Q140_3', 'Q142_3', 'Q141_1', 'Q157_1', 'Q141_2', 
+                              'Q157_2', 'Q141_3', 'Q157_3', 'Q141_4', 'Q157_4')]
+
+df.cluster <- data.frame(lapply(df.cluster, as.numeric))
+df.cluster <- na.omit(df.cluster)
+
+set.seed(11)
+
+fviz_nbclust(df.cluster, kmeans, method = "silhouette")
+final <- kmeans(df.cluster, 2, nstart = 11)
+print('Cluster centers and difference between centers')
+print(final$centers)
+print(diff(as.matrix(final$centers)))
+
+fviz_cluster(final, data = df.cluster)
+```
+
+#### Selections by cluster
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+df.clusters <- right_join(data.frame(df.students, names = rownames(df.students)), 
+                          data.frame(final$cluster, 
+                                     names = names(final$cluster))) %>%
+  select(final.cluster, Q152_1, Q152_2, Q152_3, Q153_1, Q153_2, Q153_3, Q154_1, 
+         Q154_2, Q154_3, Q154_4) %>%
+  melt(., id.vars = 'final.cluster')
+
+ggplot(df.clusters, aes(x = final.cluster, fill = as.factor(value))) +
+  geom_bar() +
+  facet_wrap(~variable, scales = 'free_x') +
+  scale_x_continuous(breaks = c(1, 2), labels = c('1', '2')) +
+  labs(x = 'Cluster', fill = 'Comparison')
+```
+
+### Associations (Cramer's V, uncorrected) between items
+```{r, echo = FALSE}
+df.cors <- lapply(inner_join(data.frame(df.cluster, names = rownames(df.cluster)),
+                             data.frame(df.students[, c('Q152_1', 'Q152_2', 
+                                                        'Q152_3', 'Q153_1', 
+                                                        'Q153_2', 'Q153_3', 
+                                                        'Q154_1', 'Q154_2', 
+                                                        'Q154_3', 'Q154_4')], 
+                                        names = rownames(df.students))), 
+                  as.factor) %>%
+  data.frame(.) %>%
+  dplyr::select(-names)
+
+cor.matrix <- round(PairApply(df.cors, FUN = CramerV), 2)
+melted.cor.matrix <- melt(cor.matrix)
+
+ggplot(data = melted.cor.matrix, aes(x = Var1, y = Var2, fill = value)) + 
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(0,1)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.25))
+```
+
+#### Fractions of selections by combination
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+df.students[df.students == ''] <- NA_character_
+
+df.students[, c('Q152_1', 'Q152_2', 'Q152_3', 'Q153_1', 'Q153_2', 'Q153_3', 
+                'Q154_1', 'Q154_2', 'Q154_3', 'Q154_4')] %>%
+  na.omit(.) %>%
+  group_by_all() %>%
+  summarize(frac = n()/nrow(df.students)) %>%
+  arrange(desc(frac)) %>%
+  head(10)
+```
 
 
 
