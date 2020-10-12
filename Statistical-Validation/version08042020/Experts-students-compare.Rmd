@@ -640,10 +640,32 @@ ggplot(data = melted.cor.matrix, aes(x = Var1, y = Var2, fill = value)) +
 ```{r, echo = FALSE, warning = FALSE, message = FALSE}
 df.students[df.students == ''] <- NA_character_
 
-df.students[, c('Q152_1', 'Q152_2', 'Q152_3', 'Q153_1', 'Q153_2', 'Q153_3', 
-                'Q154_1', 'Q154_2', 'Q154_3', 'Q154_4')] %>%
+df.compare <- df.students[, c('Q152_1', 'Q152_2', 'Q152_3', 'Q153_1', 'Q153_2', 
+                              'Q153_3', 'Q154_1', 'Q154_2', 'Q154_3', 'Q154_4')] 
+df.compare %>%
   na.omit(.) %>%
   group_by_all() %>%
+  summarize(frac = n()/nrow(df.students)) %>%
+  arrange(desc(frac)) %>%
+  head(10)
+
+df.compare %>%
+  na.omit(.) %>%
+  group_by(Q152_1, Q152_2, Q152_3) %>%
+  summarize(frac = n()/nrow(df.students)) %>%
+  arrange(desc(frac)) %>%
+  head(3)
+
+df.compare %>%
+  na.omit(.) %>%
+  group_by(Q153_1, Q153_2, Q153_3) %>%
+  summarize(frac = n()/nrow(df.students)) %>%
+  arrange(desc(frac)) %>%
+  head(3)
+
+df.compare %>%
+  na.omit(.) %>%
+  group_by(Q154_1, Q154_2, Q154_3, Q154_4) %>%
   summarize(frac = n()/nrow(df.students)) %>%
   arrange(desc(frac)) %>%
   head(10)
