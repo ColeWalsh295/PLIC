@@ -2,7 +2,7 @@
 
 The scripts included here are part of the automated administration system used to administer the PLIC.
 
-`PythonAutomation.py` includes the main administration code and functions that communicate with the Qualtrics survey platform. `PythonAutomation_v2.py` is a new version of the administration system that builds on version 1 by improving readability, reducing the amount of code, and increasing the efficiency of the system. We are currently testing version 2 and anticipate deploying this version in the near future.
+`PythonAutomation.py` includes the main administration code and functions that communicate with the Qualtrics survey platform, adapted from [Wilcox *et al.*](https://journals.aps.org/prper/abstract/10.1103/PhysRevPhysEducRes.12.010139). `PythonAutomation_v2.py` is a new version of the administration system that builds on version 1 by improving readability, reducing the amount of code, and increasing the efficiency of the system. We are currently testing version 2 and anticipate deploying this version in the near future.
 
 `ReportGen.py` includes functions that leverage `pylatex` to generate summary reports of student performance on the PLIC. These functions are called by `PythonAutomation.py` as part of the administration system, but can be called independently to generate reports for any PLIC dataset.
 
