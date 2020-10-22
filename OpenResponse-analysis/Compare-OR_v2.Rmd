@@ -1,3 +1,8 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
 ## Load necessary packages
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
 library(plyr)
@@ -59,13 +64,25 @@ df <- rbind(df.old, df.new.post, df.new.pre) %>%
   select(Survey, Group, Class_ID)
 ```
 
-# Fit models
+# Analysis
+
+## Overall differences
+
+```{r}
+df %>%
+  group_by(Survey, Group) %>%
+  summarize(N = n()) %>%
+  mutate(freq = N / sum(N))
+
+chisq.test(df$Survey, df$Group)
+```
+
+
+## Multilevel models
 
 We fit separate Multilevel logit models because pacakges for multinomial models can't handle random effects and packages for mixed effects can't handle multinomial responses. I also ran a chi-squared test to check with accounting for nesting.
 
 ```{r}
-chisq.test(df$Survey, df$Group)
-
 summary(glmer(Group ~ Survey + (1 | Class_ID), df %>%
                 filter(Group != 'B'), family = binomial(link = 'logit')))
 
