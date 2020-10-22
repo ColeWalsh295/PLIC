@@ -1,0 +1,78 @@
+## Load necessary packages
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+library(plyr)
+library(readr)
+library(tidyverse)
+library(DescTools)
+library(ggthemes)
+library(lmerTest)
+theme_set(theme_fivethirtyeight())
+```
+
+# Load data and extract classes with both CR and OR
+
+## Old data
+```{r}
+files = list.files("C:/Users/Cole/Documents/DATA/PLIC_DATA/Raw_Surveys/BC (Before Cole)/", 
+                   recursive = TRUE, full.names = TRUE)
+
+files <- files[!grepl('*UBC119_RAW_POST*', files)]
+
+read.old.file <- function(file){
+  df <- read.csv(file)
+  df <- df[-1, ]
+  df$Survey <- ifelse((df$Q1b != '') | (df$Q4b != ''), 'F', 'C')
+  df[df$Q4a == '', 'Q4a'] <- df[df$Q4a == '', 'Q4a.1']
+  df <- df %>%
+    select(Survey, Q4a)
+  
+  Name <- strsplit(file, '/')[[1]]
+  df$Class_ID <- strsplit(Name[length(Name)], '\\.')[[1]][1]
+  return(df)
+}
+
+df.old = ldply(files, read.old.file)
+```
+
+## New data
+```{r}
+df.new.post <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/POST_Valid/POST_Valid_Concat.csv') %>%
+  select(Survey, Q4a, Class_ID)
+Class_IDs <- unique(df.new.post[df.new.post$Survey == 'F', 'Class_ID'])
+df.new.post <- subset(df.new.post, df.new.post$Class_ID %in% Class_IDs) %>%
+  mutate(Class_ID = paste(Class_ID, 'post', sep = '.'))
+
+df.new.pre <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/PRE_Valid/PRE_Valid_Concat.csv') %>%
+  select(Survey, Q4a, Class_ID)
+Class_IDs <- unique(df.new.pre[df.new.pre$Survey == 'F', 'Class_ID'])
+df.new.pre <- subset(df.new.pre, df.new.pre$Class_ID %in% Class_IDs) %>%
+  mutate(Class_ID = paste(Class_ID, 'pre', sep = '.'))
+
+df <- rbind(df.old, df.new.post, df.new.pre) %>%
+  mutate(Group = as.factor(case_when(
+    Q4a == '1' ~ '1',
+    Q4a == '2' ~ '2',
+    Q4a == '3' ~ 'B',
+    TRUE ~ ''
+  ))) %>%
+  filter(Group != '' & Survey != '') %>%
+  select(Survey, Group, Class_ID)
+```
+
+# Fit models
+
+We fit separate Multilevel logit models because pacakges for multinomial models can't handle random effects and packages for mixed effects can't handle multinomial responses. I also ran a chi-squared test to check with accounting for nesting.
+
+```{r}
+chisq.test(df$Survey, df$Group)
+
+summary(glmer(Group ~ Survey + (1 | Class_ID), df %>%
+                filter(Group != 'B'), family = binomial(link = 'logit')))
+
+summary(glmer(Group ~ Survey + (1 | Class_ID), df %>%
+                filter(Group != '2'), family = binomial(link = 'logit')))
+
+summary(glmer(Group ~ Survey + (1 | Class_ID), df %>%
+                filter(Group != '1'), family = binomial(link = 'logit')))
+```
+
