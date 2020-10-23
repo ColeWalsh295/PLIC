@@ -1,7 +1,7 @@
 ---
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 ## Load necessary packages
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
@@ -91,5 +91,26 @@ summary(glmer(Group ~ Survey + (1 | Class_ID), df %>%
 
 summary(glmer(Group ~ Survey + (1 | Class_ID), df %>%
                 filter(Group != '1'), family = binomial(link = 'logit')))
+```
+
+## What was the frequency in our non-controlled dataset?
+```{r}
+df.new.pre <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/PRE_Valid/PRE_Valid_Concat.csv') %>%
+  select(Survey, Q4a, Class_ID) %>%
+  filter(Survey == 'C' & !is.na(Q4a))
+
+df.new.pre %>%
+  group_by(Q4a) %>%
+  summarize(N = n()) %>%
+  mutate(freq = N / sum(N))
+
+df.new.post <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/POST_Valid/POST_Valid_Concat.csv') %>%
+  select(Survey, Q4a, Class_ID) %>%
+  filter(Survey == 'C' & !is.na(Q4a))
+
+df.new.post %>%
+  group_by(Q4a) %>%
+  summarize(N = n()) %>%
+  mutate(freq = N / sum(N))
 ```
 
