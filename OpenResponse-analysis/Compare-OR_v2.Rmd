@@ -21,7 +21,7 @@ theme_set(theme_fivethirtyeight())
 files = list.files("C:/Users/Cole/Documents/DATA/PLIC_DATA/Raw_Surveys/BC (Before Cole)/", 
                    recursive = TRUE, full.names = TRUE)
 
-files <- files[!grepl('*UBC119_RAW_POST*', files)]
+files <- files[!grepl('*(UBC119|MAINE)_RAW_POST*', files)]
 
 read.old.file <- function(file){
   df <- read.csv(file)
