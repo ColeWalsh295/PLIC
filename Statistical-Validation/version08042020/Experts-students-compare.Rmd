@@ -526,6 +526,50 @@ ggplot(df, aes(x = factor(Q148), fill = factor(Q148))) +
   facet_wrap(~Respondent, scales = 'free_y')
 ```
 
+### Compare what to do next questions
+
+```{r, echo = FALSE}
+cols.temp <- colnames(df)[(colnames(df) %like% c('%Q134%', '%Q2e%', '%Q147%')) & 
+                            !(colnames(df) %like% '%TEXT%')]
+
+labels <- data.frame(t(info[, cols.temp])) %>%
+  mutate(Q = rownames(.)) %>%
+  `colnames<-`(c('Text', 'Q')) %>%
+  mutate(Text = case_when(
+    Text == 'Compare their k-values to the expected value' ~ 
+      'Compare their k-value to the expected value',
+    Text == 'Use a different analysis (e.g., graph the results, incorporate systematic effects)' ~ 'Change the analysis (e.g., use a different fit line, incorporate systematic effects)',
+    Text == 'Other (Please describe)' ~ 'Other',
+    TRUE ~ Text
+  )) %>%
+  filter(Text != 'Account for human error')
+
+df.next <- df[, c(cols.temp, 'Respondent')] %>%
+  filter(Respondent == 'Student') %>%
+  select(-Respondent) %>%
+  melt(., measure.vars = cols.temp) %>%
+  mutate(value = ifelse(value == 1, 1, 0),
+         Question = case_when(
+           variable %like% '%Q134%' ~ 'Group 1',
+           variable %like% '%Q2e%' ~ 'Group 2',
+           variable %like% '%Q147%' ~ 'Group 2 (cont.)'
+         )) %>%
+  filter(variable %in% labels$Q) %>%
+  left_join(., labels, by = c('variable' = 'Q')) %>%
+  select(-variable) %>%
+  mutate(Q_code = unclass(as.factor(Text)))
+
+print(unique(df.next[, c('Q_code', 'Text')]) %>%
+        arrange(Q_code))
+
+ggplot(df.next, aes(x = as.factor(Q_code), fill = as.factor(Q_code), y = value)) +
+  geom_bar(stat = 'identity')  +
+  ggtitle('Group 2, what to do next') +
+  theme(legend.position = "none") +
+  facet_wrap(~Question, scales = 'free_x')
+```
+
+
 ## Evaluate isolated versus comparison questions
 
 ### Raw bins
