@@ -494,35 +494,34 @@ def ReportControl():
             DownloadResponses(MasterDF.loc[Index, 'Post-Survey ID'])
             PostSurveyName = GetSurveyName(MasterDF.loc[Index, 'Post-Survey ID'])
             PostDF = pd.read_csv(PostSurveyName + '.csv', skiprows = [1, 2]) # rows 1 and 2 just have descriptive text
-            if(len(PostDF.index) < 6):
-                MasterDF.loc[Index, 'Report Sent'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
-                continue
+            MasterDF.loc[Index, 'Report Sent'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
             NumSurveys = MasterDF.loc[Index, 'Number of Surveys']
             PDFName = Path + "/" + MasterDF.loc[Index, 'Season'] + str(MasterDF.loc[Index, 'Course Year']) + '_' + MasterDF.loc[Index, 'School'] + '_' + str(MasterDF.loc[Index, 'Course Number']) + '_' + MasterDF.loc[Index, 'Last Name'] + '_Report'
             print(PDFName)
 
-            if(NumSurveys >= 2): # all these conditions just handle various different combinations of three surveys or less
-                DownloadResponses(MasterDF.loc[Index, 'Pre-Survey ID'])
-                PreSurveyName = GetSurveyName(MasterDF.loc[Index, 'Pre-Survey ID'])
-                PreDF = pd.read_csv(PreSurveyName + '.csv', skiprows = [1, 2])
-                if(NumSurveys == 3):
-                    DownloadResponses(MasterDF.loc[Index, 'Mid-Survey ID'])
-                    MidSurveyName = GetSurveyName(MasterDF.loc[Index, 'Mid-Survey ID'])
-                    MidDF = pd.read_csv(MidSurveyName + '.csv', skiprows = [1, 2])
-                    if((len(PreDF.index) >= 3) and (len(MidDF.index) >= 3)): # if fewer than 3 students took an assessment we don't send the data
-                        ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], MasterDF.loc[Index, 'ID'], 'C:/PLIC/', PRE = PreDF, MID = MidDF, POST = PostDF)
-                    elif((len(PreDF.index) >= 3) and (len(MidDF.index) < 3)):
+            if('Q152_21' not in PostDF.columns):
+                if(NumSurveys >= 2): # all these conditions just handle various different combinations of three surveys or less
+                    DownloadResponses(MasterDF.loc[Index, 'Pre-Survey ID'])
+                    PreSurveyName = GetSurveyName(MasterDF.loc[Index, 'Pre-Survey ID'])
+                    PreDF = pd.read_csv(PreSurveyName + '.csv', skiprows = [1, 2])
+                    if(NumSurveys == 3):
+                        DownloadResponses(MasterDF.loc[Index, 'Mid-Survey ID'])
+                        MidSurveyName = GetSurveyName(MasterDF.loc[Index, 'Mid-Survey ID'])
+                        MidDF = pd.read_csv(MidSurveyName + '.csv', skiprows = [1, 2])
+                        if((len(PreDF.index) >= 3) and (len(MidDF.index) >= 3)): # if fewer than 3 students took an assessment we don't send the data
+                            ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], MasterDF.loc[Index, 'ID'], 'C:/PLIC/', PRE = PreDF, MID = MidDF, POST = PostDF)
+                        elif((len(PreDF.index) >= 3) and (len(MidDF.index) < 3)):
+                            ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], MasterDF.loc[Index, 'ID'], 'C:/PLIC/', PRE = PreDF, POST = PostDF)
+                        elif((len(PreDF.index) < 3) and (len(MidDF.index) >= 3)):
+                            ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], MasterDF.loc[Index, 'ID'], 'C:/PLIC/', MID = MidDF, POST = PostDF)
+                        else:
+                            ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], MasterDF.loc[Index, 'ID'], 'C:/PLIC/', POST = PostDF)
+                    elif(len(PreDF.index) >= 3):
                         ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], MasterDF.loc[Index, 'ID'], 'C:/PLIC/', PRE = PreDF, POST = PostDF)
-                    elif((len(PreDF.index) < 3) and (len(MidDF.index) >= 3)):
-                        ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], MasterDF.loc[Index, 'ID'], 'C:/PLIC/', MID = MidDF, POST = PostDF)
                     else:
                         ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], MasterDF.loc[Index, 'ID'], 'C:/PLIC/', POST = PostDF)
-                elif(len(PreDF.index) >= 3):
-                    ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], MasterDF.loc[Index, 'ID'], 'C:/PLIC/', PRE = PreDF, POST = PostDF)
                 else:
                     ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], MasterDF.loc[Index, 'ID'], 'C:/PLIC/', POST = PostDF)
-            else:
-                ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], MasterDF.loc[Index, 'ID'], 'C:/PLIC/', POST = PostDF)
 
             os.chdir(Path)
             if(MasterDF.loc[Index, 'Credit Offered']): # If the instructor is offering credit include a list of names and IDs of those who completed each of the surveys
@@ -553,9 +552,12 @@ def ReportControl():
                     NamesDF = NamesDF.drop(labels = 'PostName', axis = 1)
                 NamesFileName = MasterDF.loc[Index, 'Season'] + str(MasterDF.loc[Index, 'Course Year']) + '_' + MasterDF.loc[Index, 'School'] + '_' + str(MasterDF.loc[Index, 'Course Number']) +'_' + MasterDF.loc[Index, 'Last Name'] + '_Names.csv'
                 NamesDF.to_csv(NamesFileName, index = False)
-                SendReport(MasterDF.loc[Index, 'First Name'], MasterDF.loc[Index, 'Last Name'], MasterDF.loc[Index, 'Email'], MasterDF.loc[Index, 'Course Name'], MasterDF.loc[Index, 'Course Number'], PDFName + '.pdf', CreditOffered = True, NamesFile = NamesFileName)
+                if('Q152_21' not in PostDF.columns):
+                    SendReport(MasterDF.loc[Index, 'First Name'], MasterDF.loc[Index, 'Last Name'], MasterDF.loc[Index, 'Email'], MasterDF.loc[Index, 'Course Name'], MasterDF.loc[Index, 'Course Number'], PDFName + '.pdf', CreditOffered = True, NamesFile = NamesFileName)
+                else:
+                    SendReport(MasterDF.loc[Index, 'First Name'], MasterDF.loc[Index, 'Last Name'], MasterDF.loc[Index, 'Email'], MasterDF.loc[Index, 'Course Name'], MasterDF.loc[Index, 'Course Number'], PDFName + '.pdf', CreditOffered = True, NamesFile = NamesFileName, NewFormatMessage = True)
             else:
-                SendReport(MasterDF.loc[Index, 'First Name'], MasterDF.loc[Index, 'Last Name'], MasterDF.loc[Index, 'Email'], MasterDF.loc[Index, 'Course Name'], MasterDF.loc[Index, 'Course Number'], PDFName + '.pdf')
+                SendReport(MasterDF.loc[Index, 'First Name'], MasterDF.loc[Index, 'Last Name'], MasterDF.loc[Index, 'Email'], MasterDF.loc[Index, 'Course Name'], MasterDF.loc[Index, 'Course Number'], PDFName + '.pdf', NewFormatMessage = True)
             MasterDF.loc[Index, 'Report Sent'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
     with open("C:/PLIC/MasterCourseData.csv", 'w') as f:
         MasterDataWriter = csv.writer(f)
@@ -1132,7 +1134,7 @@ def SendSurvey(ID, InstructorFirst, InstructorLast, InstructorEmail, CourseName,
     server.sendmail(CPERLEmail, [InstructorEmail, CPERLEmail], msg.as_string())
     server.quit()
 
-def SendReport(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Code, ReportFile, CreditOffered = False, NamesFile = None):
+def SendReport(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Code, ReportFile, CreditOffered = False, NamesFile = None, NewFormatMessage = False):
     # send a report of summary statistics with a list of students who completed the survey
     msg = MIMEMultipart('alternative')
     msg['From'] = CPERLEmail
@@ -1141,39 +1143,77 @@ def SendReport(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Cod
     msg['Cc'] = CPERLEmail
     msg['Subject'] = "PLIC Report"
 
-	# Create the body of the message (a plain-text and an HTML version).
-    text = """
-		   Dear Dr. {First} {Last},\n \n
+    if(not NewFormatMessage):
+    	# Create the body of the message (a plain-text and an HTML version).
+        text = """
+    		   Dear Dr. {First} {Last},\n \n
 
-		   Thank you again for participating in the PLIC. Please find attached a copy of the report summarizing the PLIC
-		   results for your course, {Course} ({Code}). Additionally, if you indicated to us that you are offering students credit
-           for completing the survey we have included a CSV file with their names here.\n\n
-		   We are continuing to test and improve our new report generation system, so please let us know by replying to this
-		   email if you have any questions, comments, or suggestions regarding this new report format.\n \n
+    		   Thank you again for participating in the PLIC. Please find attached a copy of the report summarizing the PLIC
+    		   results for your course, {Course} ({Code}). Additionally, if you indicated to us that you are offering students credit
+               for completing the survey we have included a CSV file with their names here.\n\n
+    		   We are continuing to test and improve our new report generation system, so please let us know by replying to this
+    		   email if you have any questions, comments, or suggestions regarding this new report format.\n \n
 
-		   Thank you, \n
-		   Cornell Physics Education Research Lab \n \n
-		   This message was sent by an automated system. \n
-		   """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
+    		   Thank you, \n
+    		   Cornell Physics Education Research Lab \n \n
+    		   This message was sent by an automated system. \n
+    		   """.format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
 
-    html = """\
-	<html>
-	  <head></head>
-	  <body>
-		<p>Dear Dr. {First} {Last},<br><br>
-		   Thank you again for participating in the PLIC. Please find attached a copy of the report summarizing the PLIC
-		   results for your course, {Course} ({Code}). Additionally, if you indicated to us that you are offering students credit
-           for completing the survey we have included a CSV file with their names here.<br><br>
-		   We are continuing to test and improve our new report generation system, so please let us know by replying to this
-		   email if you have any questions, comments, or suggestions regarding this new report format. <br><br>
+        html = """\
+    	<html>
+    	  <head></head>
+    	  <body>
+    		<p>Dear Dr. {First} {Last},<br><br>
+    		   Thank you again for participating in the PLIC. Please find attached a copy of the report summarizing the PLIC
+    		   results for your course, {Course} ({Code}). Additionally, if you indicated to us that you are offering students credit
+               for completing the survey we have included a CSV file with their names here.<br><br>
+    		   We are continuing to test and improve our new report generation system, so please let us know by replying to this
+    		   email if you have any questions, comments, or suggestions regarding this new report format. <br><br>
 
-		   Thank you,<br>
-		   Cornell Physics Education Research Lab<br> <br>
-		   This message was sent by an automated system.
-		</p>
-	  </body>
-	</html>
-	""".format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
+    		   Thank you,<br>
+    		   Cornell Physics Education Research Lab<br> <br>
+    		   This message was sent by an automated system.
+    		</p>
+    	  </body>
+    	</html>
+    	""".format(First = InstructorFirst, Last = InstructorLast, Course = CourseName.replace("_", " "), Code = Code)
+    else:
+    	# Create the body of the message (a plain-text and an HTML version).
+        text = """
+    		   Dear Dr. {First} {Last},\n \n
+
+    		   Thank you again for participating in the PLIC. We are currently analyzing data collected with this new format
+               and developing a scoring method. We will share results from your class with you as soon as we have finished
+               that analysis. If you indicated to us that you are offering students credit for completing the survey we
+               have included a CSV file with their names here.\n\n
+
+               We are continuing to test and improve our new report generation system, so please let us know by replying to this
+    		   email if you have any questions, comments, or suggestions regarding this new report format.\n \n
+
+    		   Thank you, \n
+    		   Cornell Physics Education Research Lab \n \n
+    		   This message was sent by an automated system. \n
+    		   """.format(First = InstructorFirst, Last = InstructorLast)
+
+        html = """\
+    	<html>
+    	  <head></head>
+    	  <body>
+    		<p>Dear Dr. {First} {Last},<br><br>
+    		   Thank you again for participating in the PLIC. We are currently analyzing data collected with this new format
+               and developing a scoring method. We will share results from your class with you as soon as we have finished
+               that analysis. If you indicated to us that you are offering students credit for completing the survey we
+               have included a CSV file with their names here.<br><br>
+    		   We are continuing to test and improve our new report generation system, so please let us know by replying to this
+    		   email if you have any questions, comments, or suggestions regarding this new report format. <br><br>
+
+    		   Thank you,<br>
+    		   Cornell Physics Education Research Lab<br> <br>
+    		   This message was sent by an automated system.
+    		</p>
+    	  </body>
+    	</html>
+    	""".format(First = InstructorFirst, Last = InstructorLast)
 
 
     # Record the MIME types of both parts - text/plain and text/html.
@@ -1186,14 +1226,15 @@ def SendReport(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Cod
     msg.attach(part1)
     msg.attach(part2)
 
-    f_pdf = open(ReportFile, 'rb')
-    att_pdf = MIMEApplication(f_pdf.read(), _subtype = "pdf")
-    f_pdf.close()
-    att_pdf.add_header('Content-Disposition', 'attachment', filename = ReportFile)
-    msg.attach(att_pdf)
+    if(not NewFormatMessage):
+        f_pdf = open(ReportFile, 'rb')
+        att_pdf = MIMEApplication(f_pdf.read(), _subtype = "pdf")
+        f_pdf.close()
+        att_pdf.add_header('Content-Disposition', 'attachment', filename = ReportFile)
+        msg.attach(att_pdf)
 
     if(CreditOffered == True):
-        f_csv=open(NamesFile, 'rb')
+        f_csv = open(NamesFile, 'rb')
         att_csv = MIMEApplication(f_csv.read(), _subtype="csv")
         f_csv.close()
         att_csv.add_header('Content-Disposition', 'attachment', filename = NamesFile)
