@@ -495,6 +495,8 @@ def ReportControl():
             PostSurveyName = GetSurveyName(MasterDF.loc[Index, 'Post-Survey ID'])
             PostDF = pd.read_csv(PostSurveyName + '.csv', skiprows = [1, 2]) # rows 1 and 2 just have descriptive text
             MasterDF.loc[Index, 'Report Sent'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
+            if PostDF.empty:
+                continue
             NumSurveys = MasterDF.loc[Index, 'Number of Surveys']
             PDFName = Path + "/" + MasterDF.loc[Index, 'Season'] + str(MasterDF.loc[Index, 'Course Year']) + '_' + MasterDF.loc[Index, 'School'] + '_' + str(MasterDF.loc[Index, 'Course Number']) + '_' + MasterDF.loc[Index, 'Last Name'] + '_Report'
             print(PDFName)
@@ -543,7 +545,7 @@ def ReportControl():
                     NamesDF = PostNamesDF.copy()
                 NamesDF = NamesDF.fillna('')
                 NamesDF['PostName'] = NamesDF['Post-Survey Last Names'] + NamesDF['Post-Survey First Names']
-                if(NumSurveys > 1):
+                if('Pre-Survey Last Names'in NamesDF.columns):
                     NamesDF['PreName'] = NamesDF['Pre-Survey Last Names'] + NamesDF['Pre-Survey First Names']
                     NamesDF = NamesDF.sort_values(by = ['PostName', 'PreName'])
                     NamesDF = NamesDF.drop(labels = ['PreName', 'PostName'], axis = 1)
