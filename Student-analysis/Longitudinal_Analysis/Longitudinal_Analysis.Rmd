@@ -104,7 +104,10 @@ summary(mod.gender)
 summary(mod.urm)
 
 plot_model(mod.gender, type = 'eff', terms = c('time.since.first', 'Gender'),
-           ci.lvl = 0.67)
+           ci.lvl = 0.67) +
+  labs(x = 'Weeks after taking PLIC for the first time', y = 'Predicted score', 
+       color = 'Gender') +
+  ggtitle('')
 plot_model(mod.urm, type = 'eff', terms = c('time.since.first', 'URM'),
            ci.lvl = 0.67)
 ```
@@ -159,6 +162,9 @@ mod.labs <- lmer(score ~ time.since.first*all.labs + Lab_level +
                    (1 | anon_institution_id/anon_student_id), df.labs)
 summary(mod.labs)
 plot_model(mod.labs, type = 'eff', terms = c('time.since.first', 'all.labs'),
-           ci.lvl = 0.67)
+           ci.lvl = 0.67) +
+  labs(x = 'Weeks after taking PLIC for the first time', y = 'Predicted score', 
+       color = 'Type of lab') +
+  ggtitle('')
 ```
 
