@@ -32,19 +32,19 @@ Read.Score.MBT <- function(file, skip.vec = c(1)){
 
 # Read MBT files
 ```{r}
-df.MBT.P1112.F2019pre <- Read.Score.MBT('C:/Users/Cole/Documents/MBT_DATA/Physics_1112_Pre_Test_Fall_2019.csv', 
+df.MBT.P1112.F2019pre <- Read.Score.MBT('C:/Users/Cole/Documents/DATA/MBT_DATA/RAW/Physics_1112_Pre_Test_Fall_2019.csv', 
                                         skip.vec = c(1, 2)) %>%
   filter((Finished == 1) & (Q82 == 1)) %>% # only keep students that finished and consented
   select(QA, QB, QC, QD, score) %>%
   `colnames<-`(c('last.name', 'first.name', 'net.id', 'student.id', 'MBT.score'))
 
-df.MBT.P1112.F2019post <- Read.Score.MBT('C:/Users/Cole/Documents/MBT_DATA/Physics_1112_Post_Test_Fall_2019.csv', 
+df.MBT.P1112.F2019post <- Read.Score.MBT('C:/Users/Cole/Documents/DATA/MBT_DATA/RAW/Physics_1112_Post_Test_Fall_2019.csv', 
                                      skip.vec = c(1, 2)) %>%
   filter((Finished == 1) & (Q82 == 1)) %>% # only keep students that finished and consented
   select(QA, QB, QC, QD, score) %>%
   `colnames<-`(c('last.name', 'first.name', 'net.id', 'student.id', 'MBT.score'))
 
-df.MBT.P1112.S2019pre <- Read.Score.MBT('C:/Users/Cole/Documents/MBT_DATA/Physics_1112_Pre_Test_Spring_2019.csv')
+df.MBT.P1112.S2019pre <- Read.Score.MBT('C:/Users/Cole/Documents/DATA/MBT_DATA/RAW/Physics_1112_Pre_Test_Spring_2019.csv')
 
 df.MBT.P1112.S2019pre <- subset(df.MBT.P1112.S2019pre, 
                                 select = c('V5', 'Q55_1', 'Q49', 'Q51', 
@@ -54,7 +54,7 @@ df.MBT.P1112.S2019pre <- subset(df.MBT.P1112.S2019pre,
   `colnames<-`(c('first.name', 'last.name', 'net.id', 'student.id', 'MBT.score'))
 
 
-df.MBT.P1112.S2019post <- Read.Score.MBT('C:/Users/Cole/Documents/MBT_DATA/Physics_1112_Post_Test_Spring_2019.csv')
+df.MBT.P1112.S2019post <- Read.Score.MBT('C:/Users/Cole/Documents/DATA/MBT_DATA/RAW/Physics_1112_Post_Test_Spring_2019.csv')
 
 df.MBT.P1112.S2019post <- subset(df.MBT.P1112.S2019post, 
                                  select = c('V5', 'Q55_1', 'Q49', 'Q51', 
@@ -66,7 +66,7 @@ df.MBT.P1112.S2019post <- subset(df.MBT.P1112.S2019post,
 
 # Read PLIC files
 ```{r}
-df.PLIC.pre <- fread('C:/Users/Cole/Documents/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat.csv') %>%
+df.PLIC.pre <- fread('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat.csv') %>%
   filter(!is.na(PreScores)) %>%
   select(Class_ID, Q5a_x, Q5b_x, Q5c_x, PreScores)
 
@@ -80,7 +80,7 @@ df.PLIC.P1112.S2019pre <- df.PLIC.pre %>%
   select(-Class_ID) %>%
   `colnames<-`(c('ID', 'last.name', 'first.name', 'PLIC.score'))
 
-df.PLIC.post <- fread('C:/Users/Cole/Documents/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat.csv') %>%
+df.PLIC.post <- fread('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat.csv') %>%
   filter(!is.na(PostScores)) %>%
   select(Class_ID, Q5a_y, Q5b_y, Q5c_y, PostScores)
 

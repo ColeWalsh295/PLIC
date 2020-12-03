@@ -14,7 +14,7 @@ library(semPlot)
 
 # E-CLASS scoring function
 ```{r}
-answers <- read.xlsx('C:/Users/Cole/Documents/ECLASS_DATA/Answers_Template.xlsx', sheetName = 'Converted', rowIndex = c(2, 4), header = FALSE)
+answers <- read.xlsx('C:/Users/Cole/Documents/DATA/ECLASS_DATA/Answers_Template.xlsx', sheetName = 'Converted', rowIndex = c(2, 4), header = FALSE)
 
 colnames(answers) <- as.character(unlist(answers[2,]))
 answers <- answers[1,]
@@ -61,33 +61,33 @@ Read.Score.ECLASS <- function(file){
 ```{r}
 # Fall 2017
 
-df.ECLASS.P1116.F2017pre <- Read.Score.ECLASS('C:/Users/Cole/Documents/ECLASS_DATA/Raw_Surveys/Fall2017/PRE/Fall2017PRE-Cornell University-Phys-1116-Natasha_Holmes-ezo65e90NlkpwRD.csv')
+df.ECLASS.P1116.F2017pre <- Read.Score.ECLASS('C:/Users/Cole/Documents/DATA/ECLASS_DATA/RAW/Fall2017/PRE/Fall2017PRE-Cornell University-Phys-1116-Natasha_Holmes-ezo65e90NlkpwRD.csv')
 
-df.ECLASS.P1116.F2017post <- Read.Score.ECLASS('C:/Users/Cole/Documents/ECLASS_DATA/Raw_Surveys/Fall2017/POST/Fall2017POST-Cornell University-Phys-1116-Natasha_Holmes-e9iS05zkYUGdsc5.csv')
+df.ECLASS.P1116.F2017post <- Read.Score.ECLASS('C:/Users/Cole/Documents/DATA/ECLASS_DATA/RAW/Fall2017/POST/Fall2017POST-Cornell University-Phys-1116-Natasha_Holmes-e9iS05zkYUGdsc5.csv')
 
-df.ECLASS.P2217.F2017pre <- Read.Score.ECLASS('C:/Users/Cole/Documents/ECLASS_DATA/Raw_Surveys/Fall2017/PRE/Fall2017PRE-Cornell University-Phys-2217-Natasha_Holmes-1ZCOw6uPVntmS7b.csv')
+df.ECLASS.P2217.F2017pre <- Read.Score.ECLASS('C:/Users/Cole/Documents/DATA/ECLASS_DATA/RAW/Fall2017/PRE/Fall2017PRE-Cornell University-Phys-2217-Natasha_Holmes-1ZCOw6uPVntmS7b.csv')
 
-df.ECLASS.P2217.F2017post <- Read.Score.ECLASS('C:/Users/Cole/Documents/ECLASS_DATA/Raw_Surveys/Fall2017/POST/Fall2017POST-Cornell University-Phys-2217-Natasha_Holmes-6SBVr7ddgt7D2Pr.csv')
+df.ECLASS.P2217.F2017post <- Read.Score.ECLASS('C:/Users/Cole/Documents/DATA/ECLASS_DATA/RAW/Fall2017/POST/Fall2017POST-Cornell University-Phys-2217-Natasha_Holmes-6SBVr7ddgt7D2Pr.csv')
 
-df.ECLASS.P2218.F2017pre <- Read.Score.ECLASS('C:/Users/Cole/Documents/ECLASS_DATA/Raw_Surveys/Fall2017/PRE/Fall2017PRE-Cornell University-Phys-2218-Natasha_Holmes-0cwmwYnSpRKeTDT.csv')
+df.ECLASS.P2218.F2017pre <- Read.Score.ECLASS('C:/Users/Cole/Documents/DATA/ECLASS_DATA/RAW/Fall2017/PRE/Fall2017PRE-Cornell University-Phys-2218-Natasha_Holmes-0cwmwYnSpRKeTDT.csv')
 
-df.ECLASS.P2218.F2017post <- Read.Score.ECLASS('C:/Users/Cole/Documents/ECLASS_DATA/Raw_Surveys/Fall2017/POST/Fall2017POST-Cornell University-Phys-2218-Natasha_Holmes-9uIb86xtOdbM0ct.csv')
+df.ECLASS.P2218.F2017post <- Read.Score.ECLASS('C:/Users/Cole/Documents/DATA/ECLASS_DATA/RAW/Fall2017/POST/Fall2017POST-Cornell University-Phys-2218-Natasha_Holmes-9uIb86xtOdbM0ct.csv')
 
 # Spring 2018
 
-df.ECLASS.P1116.S2018pre <- Read.Score.ECLASS('C:/Users/Cole/Documents/ECLASS_DATA/Raw_Surveys/Spring2018/PRE/Spring2018PRE-Cornell University-Phys-1116-Natasha_Holmes-3P10x8a4zSQJd6B.csv')
+df.ECLASS.P1116.S2018pre <- Read.Score.ECLASS('C:/Users/Cole/Documents/DATA/ECLASS_DATA/RAW/Spring2018/PRE/Spring2018PRE-Cornell University-Phys-1116-Natasha_Holmes-3P10x8a4zSQJd6B.csv')
 
-df.ECLASS.P1116.S2018post <- Read.Score.ECLASS('C:/Users/Cole/Documents/ECLASS_DATA/Raw_Surveys/Spring2018/POST/Spring2018POST-Cornell University-Phys-1116-Natasha_Holmes-db4nkuge13zi1h3.csv')
+df.ECLASS.P1116.S2018post <- Read.Score.ECLASS('C:/Users/Cole/Documents/DATA/ECLASS_DATA/RAW/Spring2018/POST/Spring2018POST-Cornell University-Phys-1116-Natasha_Holmes-db4nkuge13zi1h3.csv')
 
 # Fall 2018
 
-df.ECLASS.P1112.F2018pre <- Read.Score.ECLASS('C:/Users/Cole/Documents/ECLASS_DATA/Raw_Surveys/Fall2018/PRE/Fall2018PRE-Cornell-Phys-1112-Natasha_Holmes-8k2QpdWGDMHCV6t.csv')
+df.ECLASS.P1112.F2018pre <- Read.Score.ECLASS('C:/Users/Cole/Documents/DATA/ECLASS_DATA/RAW/Fall2018/PRE/Fall2018PRE-Cornell-Phys-1112-Natasha_Holmes-8k2QpdWGDMHCV6t.csv')
 
-df.ECLASS.P1112.F2018post <- Read.Score.ECLASS('C:/Users/Cole/Documents/ECLASS_DATA/Raw_Surveys/Fall2018/POST/Fall2018POST-Cornell-Phys-1112-Natasha_Holmes-8942bcaRSDUniDj.csv')
+df.ECLASS.P1112.F2018post <- Read.Score.ECLASS('C:/Users/Cole/Documents/DATA/ECLASS_DATA/RAW/Fall2018/POST/Fall2018POST-Cornell-Phys-1112-Natasha_Holmes-8942bcaRSDUniDj.csv')
 
-df.ECLASS.P1116.F2018pre <- Read.Score.ECLASS('C:/Users/Cole/Documents/ECLASS_DATA/Raw_Surveys/Fall2018/PRE/Fall2018PRE-Cornell University-Phys-1116-Natasha_Holmes-40K8e3vdsXRnyeh.csv')
+df.ECLASS.P1116.F2018pre <- Read.Score.ECLASS('C:/Users/Cole/Documents/DATA/ECLASS_DATA/RAW/Fall2018/PRE/Fall2018PRE-Cornell University-Phys-1116-Natasha_Holmes-40K8e3vdsXRnyeh.csv')
 
-df.ECLASS.P1116.F2018post <- Read.Score.ECLASS('C:/Users/Cole/Documents/ECLASS_DATA/Raw_Surveys/Fall2018/POST/Fall2018POST-Cornell University-Phys-1116-Natasha_Holmes-5ArscxVeockVPJb.csv')
+df.ECLASS.P1116.F2018post <- Read.Score.ECLASS('C:/Users/Cole/Documents/DATA/ECLASS_DATA/RAW/Fall2018/POST/Fall2018POST-Cornell University-Phys-1116-Natasha_Holmes-5ArscxVeockVPJb.csv')
 ```
 
 # Read PLIC files
@@ -103,11 +103,11 @@ Get.PLIC.data <- function(df, ClassID){
 
 ### Pre ###
 
-df.PLIC.pre <- fread('C:/Users/Cole/Documents/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat.csv') %>%
+df.PLIC.pre <- fread('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat.csv') %>%
   filter(!is.na(PreScores)) %>%
   select(Class_ID, Q5a_x, Q5b_x, Q5c_x, PreScores)
 
-df.PLIC.post <- fread('C:/Users/Cole/Documents/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat.csv') %>%
+df.PLIC.post <- fread('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat.csv') %>%
   filter(!is.na(PostScores)) %>%
   select(Class_ID, Q5a_y, Q5b_y, Q5c_y, PostScores)
 
@@ -136,6 +136,8 @@ df.PLIC.P1116.F2018post <- Get.PLIC.data(df.PLIC.post, 'R_1IB300CxBKh0Tw7')
 # Matching E-CLASS and PLIC
 ```{r}
 match.ECLASS.PLIC <- function(ECLASS.df, PLIC.df){
+  ECLASS.df <- data.frame(ECLASS.df)
+  PLIC.df <- data.frame(PLIC.df)
   match.cols <- c('ID', 'last.name', 'first.name')
   ECLASS.df[, match.cols] <- sapply(ECLASS.df[, match.cols], tolower)
   PLIC.df[, match.cols] <- sapply(PLIC.df[, match.cols], tolower)
