@@ -524,6 +524,15 @@ def ReportControl():
                         ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], MasterDF.loc[Index, 'ID'], 'C:/PLIC/', POST = PostDF)
                 else:
                     ReportGen.Generate(PDFName, r'\textwidth', MasterDF.loc[Index, 'Number Of Students'], MasterDF.loc[Index, 'Course Type'], MasterDF.loc[Index, 'ID'], 'C:/PLIC/', POST = PostDF)
+            else:
+                if(NumSurveys >= 2): # all these conditions just handle various different combinations of three surveys or less
+                    DownloadResponses(MasterDF.loc[Index, 'Pre-Survey ID'])
+                    PreSurveyName = GetSurveyName(MasterDF.loc[Index, 'Pre-Survey ID'])
+                    PreDF = pd.read_csv(PreSurveyName + '.csv', skiprows = [1, 2])
+                    if(NumSurveys == 3):
+                        DownloadResponses(MasterDF.loc[Index, 'Mid-Survey ID'])
+                        MidSurveyName = GetSurveyName(MasterDF.loc[Index, 'Mid-Survey ID'])
+                        MidDF = pd.read_csv(MidSurveyName + '.csv', skiprows = [1, 2])
 
             os.chdir(Path)
             if(MasterDF.loc[Index, 'Credit Offered']): # If the instructor is offering credit include a list of names and IDs of those who completed each of the surveys
