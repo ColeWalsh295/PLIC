@@ -1,0 +1,164 @@
+```{r, results = 'hide', message = FALSE, warning = FALSE}
+library(tidyverse)
+library(reshape2)
+library(data.table)
+library(lmerTest)
+library(sjPlot)
+source('C:/Users/Cole/Documents/GitHub/PLIC/Processing-Scripts/PLIC_DataProcessing.R')
+```
+
+# Load and transform data to long form
+```{r, message = FALSE, warning = FALSE}
+df <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
+  filter(Survey_x == 'C' | Survey_y == 'C')
+
+# Remove FR scores
+df[df$Survey_x == 'F', 'PreScores'] <- NA_real_
+df[df$Survey_y == 'F', 'PostScores'] <- NA_real_
+
+df.long <- df %>%
+  Collapse.vars(.) %>%
+  select_if(grepl('Class_ID|PostScores|PreScores|Gender|Race.ethnicity|Lab_purpose|Lab_level|anon_student_id|anon_institution_id|V4_x|V4_y', names(.))) %>%
+  melt(., measure.vars = c('PreScores', 'PostScores'), variable.name = 'test', 
+       value.name = 'score') %>%
+  filter(!is.na(score)) %>%
+  melt(., measure.vars = c('V4_x', 'V4_y'), value.name = 'time') %>%
+  mutate(score = case_when(
+    ((test == 'PreScores') & (variable == 'V4_y')) | 
+      ((test == 'PostScores') & (variable == 'V4_x')) ~ NA_real_,
+    TRUE ~ score
+  ),
+  time = as.POSIXct(time, format = "%Y-%m-%d %H:%M:%S", tz = Sys.timezone())) %>%
+  filter(!is.na(score)) %>%
+  select(-c('test', 'variable'))
+
+# time difference between tests in units of weeks
+df.long <- data.table(df.long)[order(time), c('test', 
+                                              'time.first') := list(1:.N, 
+                                                                    min(time)), 
+                               by = anon_student_id][order(time), 
+                                                     c('time.diff', 
+                                                       'time.since.first') := 
+                                                       list(as.numeric(difftime(time, shift(time), units = 'weeks')), 
+                                                            as.numeric(difftime(time, time.first, units = 'weeks'))), 
+                                                     by = anon_student_id] %>%
+  select(-time, time.first) %>%
+  mutate(time.diff = case_when(
+    is.na(time.diff) ~ 0,
+    TRUE ~ time.diff
+  ))
+
+# bins weeks in units of 15
+df.long$time.diff.binned <- round(df.long$time.diff/15)*15
+df.long$time.since.first.binned = round(df.long$time.since.first/15)*15
+```
+
+# Quick visulizations
+```{r}
+table(df.long$time.since.first.binned)
+
+# overall dataset
+ggplot(df.long, aes(x = time.since.first.binned, y = score, 
+                    group = time.since.first.binned)) +
+  stat_summary(stat = 'mean_se')
+
+# dataset with at least two data points
+students.2 <- df.long[df.long$test == 2,]$anon_student_id
+
+ggplot(df.long %>%
+         filter(anon_student_id %in% students.2), 
+       aes(x = time.since.first.binned, y = score, 
+           group = time.since.first.binned)) +
+  stat_summary(stat = 'mean_se')
+
+# dataset with at least three data points
+students.3 <- df.long[df.long$test == 3,]$anon_student_id
+
+ggplot(df.long %>%
+         filter(anon_student_id %in% students.3), 
+       aes(x = time.since.first.binned, y = score, 
+           group = time.since.first.binned)) +
+  stat_summary(stat = 'mean_se')
+```
+
+Mixed-effects models
+```{r}
+df.long <- df.long %>%
+  mutate(URM = case_when(
+    (Race.ethnicity.AmInd == 1) | (Race.ethnicity.Black == 1) | 
+      (Race.ethnicity.Hispanic == 1) | (Race.ethnicity.NatHawaii == 1) | 
+      (Race.ethnicity.Other == 1) ~ 'URM',
+    TRUE ~ 'Majority'))
+
+summary(lmer(score ~ time.since.first + Lab_level + (1 | anon_student_id), 
+             df.long))
+summary(lmer(score ~ time.since.first + Lab_level + 
+               (1 | anon_institution_id/anon_student_id), df.long))
+
+mod.gender <- lmer(score ~ time.since.first*Gender + Lab_level +
+                     (1 | anon_institution_id/anon_student_id), df.long %>%
+                     filter(Gender %like% '[M|m]an'))
+mod.urm <- lmer(score ~ time.since.first*URM + Lab_level +
+                  (1 | anon_institution_id/anon_student_id), df.long)
+summary(mod.gender)
+summary(mod.urm)
+
+plot_model(mod.gender, type = 'eff', terms = c('time.since.first', 'Gender'),
+           ci.lvl = 0.67)
+plot_model(mod.urm, type = 'eff', terms = c('time.since.first', 'URM'),
+           ci.lvl = 0.67)
+```
+
+# Are there selection effects? I've only looked at institutions, which doesn't really get at selection effects...come back to this.
+```{r}
+institutions.3 <- unique(df.long[df.long$test == 3, 
+                                 'anon_institution_id'])$anon_institution_id
+
+df.long.3 <- df.long[df.long$anon_institution_id %in% institutions.3,]
+
+df.long.3 %>%
+  group_by(test) %>%
+  summarize(frac_woman = (sum(Gender == 'Woman', na.rm = TRUE))/n(),
+            frac_urm = (sum(URM == 1, na.rm = TRUE) / n()))
+
+df.long.3 %>%
+  group_by(time.since.first.binned) %>%
+  summarize(frac_woman = (sum(Gender == 'Woman', na.rm = TRUE))/n(),
+            frac_urm = (sum(URM == 1, na.rm = TRUE) / n()))
+```
+
+```{r}
+df.labs <- data.table(df.long)[, c('frac.concepts', 'frac.skills', 'frac.both') 
+                               := list(sum(Lab_purpose == 'Reinforce concepts', 
+                                           na.rm = TRUE),
+                                       sum(Lab_purpose == 'Develop lab skills', 
+                                           na.rm = TRUE), 
+                                       sum(Lab_purpose == 'Both about equally', 
+                                           na.rm = TRUE)), by = anon_student_id]
+df.labs <- df.labs %>%
+  mutate(major.lab = case_when(
+      frac.concepts > (frac.skills + frac.both) ~ 'concepts',
+      frac.skills > (frac.concepts + frac.both) ~ 'skills',
+      frac.both > (frac.skills + frac.concepts) ~ 'both',
+      TRUE ~ 'mixed'),
+    all.labs = case_when(
+      (frac.skills + frac.both) == 0 ~ 'concepts',
+      (frac.concepts + frac.both) == 0 ~ 'skills',
+      (frac.skills + frac.concepts) == 0 ~ 'both',
+      TRUE ~ 'mixed'
+    ))
+
+ggplot(df.labs, aes(x = time.since.first.binned, y = score, group = all.labs, color = all.labs)) +
+  stat_summary(stat = 'mean_se')
+
+df.labs %>%
+  group_by(time.since.first.binned, all.labs) %>%
+  summarize(n())
+
+mod.labs <- lmer(score ~ time.since.first*all.labs + Lab_level +
+                   (1 | anon_institution_id/anon_student_id), df.labs)
+summary(mod.labs)
+plot_model(mod.labs, type = 'eff', terms = c('time.since.first', 'all.labs'),
+           ci.lvl = 0.67)
+```
+
