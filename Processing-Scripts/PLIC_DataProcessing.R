@@ -47,7 +47,7 @@ Collapse.vars <- function(df){
     mutate(Major = relevel(as.factor(Major), ref = 'Physics'),
            Gender = relevel(as.factor(Gender), ref = 'Man'))
   
-  df[is.na(df)] <- 0
+  # df[is.na(df)] <- 0
   df[, names(df)[names(df) %like% "Race"]] <- 
     lapply(df[, names(df)[names(df) %like% "Race"]], factor, levels = c(1, 0))
   df[,names(df)[names(df) %like% "Race"]] <- 
