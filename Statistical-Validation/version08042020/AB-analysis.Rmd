@@ -1,0 +1,46 @@
+# Setup
+
+## Load necessary packages
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+library(plyr)
+library(readr)
+library(tidyverse)
+library(DescTools)
+library(ryouready)
+library(reshape2)
+library(stringr)
+library(ggthemes)
+library(cluster)
+library(factoextra)
+library(DescTools)
+theme_set(theme_fivethirtyeight())
+```
+
+## Load and combine students' responses
+```{r, echo = FALSE}
+files = list.files("C:/Users/Cole/Documents/DATA/PLIC_DATA/SurveysNovember2020/", 
+                   recursive = TRUE, full.names = TRUE)
+
+header = read.csv(files[1], header = F, nrows = 1, as.is = T)
+df.students = ldply(files, read.csv, header = T, skip = 1) %>%
+  `colnames<-`(header) %>%
+  filter(V5 == 1) %>%
+  filter((Qt1_3 > 30) | (Qt2_3 > 30) | (Qt3_3 > 30) | (Qt4_3 > 3))
+df.students = df.students[df.students[, 'Unnamed: 7'] == 1,]
+```
+
+# Analysis
+```{r}
+Questions <- c('Q4a', 'Q152_1',	'Q152_2', 'Q152_3',	'Q152_4', 'Q153_1', 'Q153_2', 'Q153_3', 'Q154_1', 'Q154_2', 'Q154_3', 'Q154_4', 'Q148')
+
+for(Q in Questions){
+  df.students[, Q] <- as.factor(df.students[, Q])
+  p <- ggplot(df.students, aes_string(x = 'Condition', fill = Q, 
+                               group = Q)) +
+  geom_bar(position = 'dodge')
+  
+  print(p)
+  print(chisq.test(df.students$Condition, df.students[, Q]))
+}
+```
+
