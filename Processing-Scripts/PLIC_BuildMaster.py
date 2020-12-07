@@ -35,9 +35,9 @@ def GetAllData(df, mainDirectory, startDate = None, endDate = None, Completed = 
             df = df.loc[(df['Pre-Survey Closed'] > datetime.datetime.strptime(startDate, '%m/%d/%Y')) | (df['Post-Survey Closed'] > datetime.datetime.strptime(startDate, '%m/%d/%Y'))]
     if(endDate is not None):
         if Completed:
-            df = df.loc[df['Post-Survey Closed'] > datetime.datetime.strptime(endDate, '%m/%d/%Y')]
+            df = df.loc[df['Post-Survey Closed'] < datetime.datetime.strptime(endDate, '%m/%d/%Y')]
         else:
-            df = df.loc[(df['Pre-Survey Closed'] > datetime.datetime.strptime(endDate, '%m/%d/%Y')) | (df['Post-Survey Closed'] > datetime.datetime.strptime(endDate, '%m/%d/%Y'))]
+            df = df.loc[(df['Pre-Survey Closed'] < datetime.datetime.strptime(endDate, '%m/%d/%Y')) | (df['Post-Survey Closed'] < datetime.datetime.strptime(endDate, '%m/%d/%Y'))]
 
 
     df = df.reset_index(drop = True)
