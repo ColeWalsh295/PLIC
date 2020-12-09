@@ -304,6 +304,7 @@ def AddCourseInfo(Students_FILE, Courses_FILE):
     df_courses['Lab_purpose'] = df_courses['Lab_purpose'].map({1:'Reinforce concepts', 2:'Develop lab skills', 3:'Both about equally'})
 
     df = df_students.merge(df_courses, left_on = 'Class_ID', right_on = 'V1', how = 'left').drop_duplicates(subset = ['V1_x', 'V1_y'])
+    df = df.loc[df['Institution_type'] != 'HighSchool', :] # remove high school courses from dataset
 
     df['anon_student_id'] = (df['Q5b_y'].fillna(df['Q5b_x']).apply(str).str.lower() +
                                 df['Q5c_y'].fillna(df['Q5c_x']).apply(str).str.lower()).str.replace('\W', '')
