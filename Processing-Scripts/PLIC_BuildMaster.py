@@ -54,7 +54,6 @@ def GetAllData(df, mainDirectory, startDate = None, endDate = None, Completed = 
                 DownloadResponses(Class['Pre-Survey ID'])
             os.chdir(TermDir + '/POST')
             DownloadResponses(Class['Post-Survey ID'])
-            print(Class['ID'])
         except:
             continue
 
