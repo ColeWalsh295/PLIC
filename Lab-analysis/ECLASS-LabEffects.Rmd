@@ -62,8 +62,7 @@ full.df <- full.df %>%
     ), 
     Course.level = case_when(
       Q18 == 'Beyond the first year lab' ~ 'BFY',
-      Q27 == 'Calculus-based' ~ 'FY.Calc',
-      Q27 == 'Algebra-based' ~ 'FY.Alg',
+      (Q27 == 'Calculus-based') | (Q27 == 'Algebra-based') ~ 'FY',
       TRUE ~ NA_character_
     ))
 
@@ -82,21 +81,21 @@ complete.df <- full.df %>%
 df.matched <- complete.df %>%
   filter(!is.na(student.score.pre) & !is.na(student.score.post))
 
-data.frame(N.student.records = unlist(lapply(list(full.df, complete.df, df.matched), 
+data.frame(N.student.records = unlist(lapply(list(full.df, complete.df, 
+                                                  df.matched), 
                                              function(x) nrow(x))),
            N.students = unlist(lapply(list(full.df, complete.df, df.matched), 
-                                      function(x) length(unique(x[,
-                                                                  'anon_student_id'])))),
+                                      function(x) length(unique(x[,                                                                  'anon_student_id'])))),
            N.classes = unlist(lapply(list(full.df, complete.df, df.matched), 
-                                     function(x) length(unique(x[, 'ResponseId.CIS'])))),
+                                     function(x) length(unique(x[,                                                                 'ResponseId.CIS'])))),
            N.institutions = unlist(lapply(list(full.df, complete.df, df.matched),
-                                          function(x) length(unique(x[,
-                                                                      'anon_university_id'])))), row.names = c('full dataset', 'course info',
-                                                                                                               'matched'))
+                                          function(x) length(unique(x[,                                                                     'anon_university_id'])))),
+           row.names = c('full dataset', 'course info', 'matched'))
 
 # Breakdown of institution type, course level, and lab type
 table(df.matched[!duplicated(df.matched$anon_university_id),]$Q15, exclude = NULL)
-table(df.matched[!duplicated(df.matched$ResponseId.CIS),]$Course.level, exclude = NULL)
+table(df.matched[!duplicated(df.matched$ResponseId.CIS),]$Course.level, 
+      exclude = NULL)
 table(df.matched[!duplicated(df.matched$ResponseId.CIS),]$Lab.type, exclude = NULL)
 ```
 
@@ -104,7 +103,8 @@ table(df.matched[!duplicated(df.matched$ResponseId.CIS),]$Lab.type, exclude = NU
 ```{r}
 # replace declared major with intended major in cases where students intend to switch
 df.matched[is.na(df.matched$Q48) | (df.matched$Q48 == 0),
-'Q48'] <- df.matched[is.na(df.matched$Q48) | (df.matched$Q48 == 0), 'Q47']
+           'Q48'] <- df.matched[is.na(df.matched$Q48) | (df.matched$Q48 == 0), 
+                                'Q47']
 
 # mutate and combine categories
 df.matched <- df.matched %>%
@@ -148,7 +148,7 @@ df.matched <- df.matched %>%
   mutate(Major = relevel(as.factor(Major), ref = 'Physics'),
          Gender = relevel(as.factor(Gender), ref = 'Man'),
          Lab.type = relevel(as.factor(Lab.type), ref = 'Concepts-based'),
-         Course.level = relevel(as.factor(Course.level), ref = 'FY.Alg'))
+         Course.level = relevel(as.factor(Course.level), ref = 'FY'))
 
 # rename race columns
 new.race.cols <- c('Race.ethnicity.Other', 'Race.ethnicity.Black', 
@@ -210,7 +210,8 @@ plot.pre.post <- function(df, var){
       filter(value == 1) %>%
       select(Time, Score, Race.ethnicity) %>%
       rowwise() %>% # rowwise split the characters in the column to get labels
-      mutate(Race.ethnicity = strsplit(as.character(Race.ethnicity), '\\.')[[1]][3])
+      mutate(Race.ethnicity = strsplit(as.character(Race.ethnicity), 
+                                       '\\.')[[1]][3])
     
   } else {
     # we only need to put the scores in long form since the gender/lab type
@@ -220,9 +221,11 @@ plot.pre.post <- function(df, var){
                               variable.name = 'Time', value.name = 'Score')
   }
   
-  p <- ggplot(df.long, aes_string(x = var, y = 'Score', group = 'Time', color = 'Time'))
-  add_summary(p, fun = 'mean_se', group = c('Time')) +
-    scale_color_manual(labels = c('pre', 'post'), values = c('#2271B2', '#D55E00')) +
+  p <- ggplot(df.long, aes_string(x = var, y = 'Score', group = 'Time', 
+                                  color = 'Time'))
+  ggpubr::add_summary(p, fun = 'mean_se', group = c('Time')) +
+    scale_color_manual(labels = c('pre', 'post'), values = c('#2271B2', 
+                                                             '#D55E00')) +
     theme(axis.text.x = element_text(angle = 90))
 }
 
@@ -246,18 +249,17 @@ mod <- lmer(student.score.post ~ student.score.pre + Course.level + Lab.type *
                  Race.ethnicity.White + Race.ethnicity.Unknown) + 
                Major + (1 | anon_university_id/ResponseId.CIS), df.matched)
 summary(mod)
+r2(mod)
 
-# get standardized coefficients, grand-mean-centering continuous variables
-noStandard.cols <- c('Lab.type', 'Course.level', 'Major', 'Gender', 
-                     names(df.matched)[names(df.matched) %like% "Race"])
 class(mod) <- "lmerMod"
-mod.std <- beta(mod, skip = noStandard.cols)
+mod.std <- std_beta(mod, ci = 0.67)
+mod.std$uncertainty <- abs(mod.std$Std_Coefficient - mod.std$CI_low)
 ```
 
 # Variance inflation factors and model diagnostics
 ```{r}
-# variance inflation factors...ratio of variance in measured parameter compared to model 
-# with only that parameter
+# variance inflation factors...ratio of variance in measured parameter compared to 
+# model with only that parameter
 vif(mod)
 # fitted values versus residuals...should be no trend
 plot(mod, xlab = 'Fitted values', ylab = 'Residuals')
@@ -267,10 +269,8 @@ qqmath(mod) # standardized residuals versus standard quantiles
 # Output stargazer
 ```{r, results = 'hide', message = FALSE, warning = FALSE, include = FALSE}
 # standardized model appended .z to this column, so we remove the appendix
-rownames(mod.std$coefficients)[2] <- 'student.score.pre'
-
 # coefficient labels
-labels = c("Constant", "Pretest", "Beyond-first-year", "First-year (calculus)",
+labels = c("Constant", "Pretest", "Beyond-first-year",
            "Mixed", "Skills-based", "Non-binary", "Unknown", "Woman", 
            "American Indian", "Native Hawaiian", "Other", "Black", "Hispanic", 
            "Asian", "White", "Unknown", "LifeSci/Chem", "Engineering", "Math/CS", 
@@ -288,15 +288,13 @@ labels = c("Constant", "Pretest", "Beyond-first-year", "First-year (calculus)",
 # concatenate estimates and SEs from raw and standardized models
 stargazer(mod, mod, mod, mod, coef = list(summary(mod)$coefficients[, 1],
                                           summary(mod)$coefficients[, 2], 
-                                          mod.std$coefficients[, 1],
-                                          mod.std$coefficients[, 2]), 
+                                          mod.std$Std_Coefficient,
+                                          mod.std$uncertainty), 
           se = list(summary(mod)$coefficients[, 2], NA, 
-                    mod.std$coefficients[, 2], NA), 
+                    mod.std$uncertainty, NA), 
           type = 'latex', intercept.bottom = FALSE, style = 'asr', 
-          keep.stat = c(''), 
-          column.labels = c('Beta', 'SE', 'Beta.std', 'SE'), 
-          model.numbers = FALSE, 
-          covariate.labels = labels, dep.var.labels = 'E-CLASS posttest scores', 
+          column.labels = c('Beta', 'SE', 'Beta.std', 'SE'), model.numbers = FALSE,
+          covariate.labels = labels, dep.var.labels = 'E-CLASS posttest scores',
           out ='E-CLASS_model.tex')
 ```
 
@@ -398,60 +396,124 @@ dev.off()
 
 # Process CIS items
 ```{r}
-df.matched[, names(df.matched) %like% "Q34|Q35|Q36"] <- 
-  data.frame(lapply(df.matched[, names(df.matched) %like% "Q34|Q35|Q36"], function(x) 
+df.matched[, names(df.matched) %like% "Q34|Q35|Q36|Q37|Q38"] <- 
+  data.frame(lapply(df.matched[, names(df.matched) %like% "Q34|Q35|Q36|Q37|Q38"], function(x) 
     droplevels(factor(as.vector(x), levels = c('Never', 'Rarely', 'Sometimes', 
                                                'Often', 'Always'), 
                       ordered = TRUE))))
 
-df.matched[, names(df.matched) %like% "Q34|Q35|Q36"] <- data.frame(lapply(df.matched[, names(df.matched) %like% "Q34|Q35|Q36"], function(x) as.numeric(x)))
+df.matched[, names(df.matched) %like% "Q34|Q35|Q36|Q37|Q38"] <- data.frame(lapply(df.matched[, names(df.matched) %like% "Q34|Q35|Q36|Q37|Q38"],                                                           function(x) as.numeric(x)))
 ```
 
-# Run CFA on CIS
+# Load PLIC dataset, combine and extract CIS items
 ```{r}
-mod <- '
-  agency =~ Q35_1 + Q35_2 + Q35_3 + Q35_4 + Q35_5 + Q35_6 + Q34_1 + Q34_2 + Q34_3
+source('C:/Users/Cole/Documents/GitHub/PLIC/Processing-Scripts/PLIC_DataProcessing.R')
+
+full.df <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
+  filter(Survey_x == 'C' | Survey_y == 'C') %>%
+  mutate(V4_x = as.Date(V4_x),
+         V4_y = as.Date(V4_y)) %>%
+  filter(V4_y < as.Date('2020-01-01') | (is.na(V4_y) & 
+                                           V4_x < as.Date('2020-01-01')))
+
+# Remove FR scores
+full.df[full.df$Survey_x == 'F', 'PreScores'] <- NA_real_
+full.df[full.df$Survey_y == 'F', 'PostScores'] <- NA_real_
+
+# Remove whole classes without goal and/or level information or that were only administered at pre or post
+full.df <- data.table(full.df)[, `:=`(N.students = .N, 
+                                      pre.rate = sum(Survey_x == 'C')/.N,
+                                      post.rate = sum(Survey_y == 'C')/.N),  
+                               .(Class_ID)]
+
+full.df <- full.df %>%
+  filter(!is.na(Lab_level) & !is.na(Lab_purpose) & (Lab_purpose != '') & 
+           (pre.rate > 0) & (post.rate > 0))
+
+df.PLIC <- full.df %>%
+  filter(!is.na(PreScores) & !is.na(PostScores))
+
+df.PLIC <- df.PLIC[!duplicated(df.PLIC$Class_ID),]
+
+# Creates new gender/race/major columns
+df.PLIC <- Collapse.vars(data.frame(df.PLIC)) %>%
+  mutate(Lab_level = relevel(as.factor(case_when(
+    (Lab_level == 'Intro-Algebra') | (Lab_level == 'Intro-Calculus') ~ 'FY',
+    (Lab_level == 'Sophomore') | (Lab_level == 'Junior') | 
+      (Lab_level == 'Senior') | (Lab_level == 'Graduate') ~ 'BFY',
+    TRUE ~ NA_character_
+  )), ref = 'FY'),
+  Lab_purpose = relevel(as.factor(case_when(
+    Lab_purpose == 'Reinforce concepts' ~ 'Concepts-based',
+    Lab_purpose == 'Both about equally' ~ 'Mixed',
+    Lab_purpose == 'Develop lab skills' ~ 'Skills-based')), 
+    ref = 'Concepts-based'))
+
+df.PLIC[, names(df.PLIC) %like% "Q28|Q29|Q31|Q32|Q33"] <- 
+  data.frame(lapply(df.PLIC[, names(df.PLIC) %like% "Q28|Q29|Q31|Q32|Q33"], 
+                    function(x) droplevels(factor(as.vector(x), 
+                                                  levels = c('1', '2', '3', '4',
+                                                             '5'), 
+                                                  ordered = TRUE))))
+
+df.PLIC[, names(df.PLIC) %like% "Q28|Q29|Q31|Q32|Q33"] <- data.frame(lapply(df.PLIC[, names(df.PLIC) %like% "Q28|Q29|Q31|Q32|Q33"],                                                           function(x) as.numeric(x)))
+
+df.PLIC <- df.PLIC[, names(df.PLIC) %like% "Q28|Q29|Q31|Q32|Q33"] %>%
+  mutate(Assessment = 'PLIC')
+
+df.ECLASS <- df.matched[!duplicated(df.matched$ResponseId.CIS),]
+
+df.ECLASS <- df.ECLASS[, names(df.ECLASS) %like% "Q34|Q35|Q36|Q37|Q38"] %>%
+  mutate(Assessment = 'ECLASS')
+
+colnames(df.PLIC) <- colnames(df.ECLASS)
+df.CIS <- rbind(df.ECLASS, df.PLIC)
+df.CIS <- df.CIS[!duplicated(df.CIS[, names(df.CIS)[names(df.CIS) %like% "Q34|Q35|Q36|Q37|Q38"]]),]
+
+df.CIS
+```
+
+# CFA
+```{r}
+mod.cfa <- '
+  agency =~ Q35_1 + Q35_2 + Q35_3 + Q35_4 + Q35_5 + Q34_3 + Q36_6
+  analysis =~ Q37_1 + Q37_2
+  modeling =~ Q36_1 + Q36_2 + Q36_3 + Q36_4
+  communication =~ Q38_1 + Q38_3 + Q38_4
+  Q36_1 ~~ Q36_2 + Q36_3
+  Q36_4 ~~ Q36_3 + Q36_2
+  Q38_1 ~~ Q38_4
 '
 
-# unique classes only
-CIS.df <- unique(df.matched[, names(df.matched) %like% "Q34|Q35|Q36"])
-
-fit <- cfa(mod, CIS.df)
+fit <- sem(mod.cfa, data = df.CIS)
 summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
-semPaths(fit, whatLabels = 'std')
-resid(fit, type = 'cor')
+standardizedsolution(fit)
+colSums(1 * (abs(resid(fit, type = 'cor')$cov) > 0.2))
+resid(fit, type = 'cor')$cov
 ```
 
-# Run EFA on half of the dataset
+# EFA
 ```{r}
-set.seed(11)
-inds <- sample(seq_len(nrow(CIS.df)), size = nrow(CIS.df)/2)
-CIS.train.df <- CIS.df[inds, names(CIS.df) %like% 'Q34|Q35']
+fa.parallel(df.CIS %>%
+              select(-Assessment))
 
-CIS.train.df
+mod2 <- fa(df.CIS %>%
+             select(-Assessment), nfactors = 2)
+fa.diagram(mod2)
 
-fa.parallel(CIS.train.df)
+mod3 <- fa(df.CIS %>%
+             select(-Assessment), nfactors = 3)
+fa.diagram(mod3)
 
-fit1 <- fa(CIS.train.df, 1)
-fit1
-fa.diagram(fit1)
+mod4 <- fa(df.CIS %>%
+             select(-Assessment), nfactors = 4)
+fa.diagram(mod4)
 
-fit2 <- fa(CIS.train.df, 2)
-fit2
-fa.diagram(fit2)
+mod5 <- fa(df.CIS %>%
+             select(-Assessment), nfactors = 5)
+fa.diagram(mod5)
 ```
 
-# Run CFA on CIS with new model
-```{r}
-mod <- '
-  agency =~ Q35_1 + Q35_2 + Q35_3 + Q35_4 + Q35_5 + Q34_1 + Q34_3
-'
-
-fit <- cfa(mod, CIS.df[-inds,])
-summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
-semPaths(fit, whatLabels = 'std')
-resid(fit, type = 'cor')
-```
 
 # Full SEM
 ```{r}
@@ -460,20 +522,105 @@ df.matched <- df.matched %>%
          Lab.goal.both = 1 * (Lab.type == 'Mixed'),
          Lab.goal.concepts = 1 * (Lab.type == 'Concepts-based'))
 
+df.FY <- df.matched %>%
+  filter(Course.level == 'FY')
+df.BFY <- df.matched %>%
+  filter(Course.level == 'BFY')
+
 mod.sem <- '
   level: 1
     student.score.post ~ student.score.pre
   level: 2
-    agency =~ Q35_1 + Q35_2 + Q35_3 + Q35_4 + Q35_5 + Q34_1 + Q34_3
-    Q35_3 ~~ Q35_4 + Q35_5
-    Q35_4 ~~ Q35_5
+    agency =~ Q35_1 + Q35_2 + Q35_3 + Q35_4 + Q35_5 + Q34_3 + Q36_6
+    #analysis =~ Q37_1 + Q37_2
+    modeling =~ Q36_1 + Q36_2 + Q36_3 + Q36_4
+    communication =~ Q38_1 + Q38_2 + Q38_3 + Q38_4
+    agency ~~ communication #+ modeling
+    #modeling ~~ communication
+    Q36_1 ~~ Q36_2 + Q36_3
+    Q36_4 ~~ Q36_3 + Q36_2
+
+    agency ~ Lab.goal.skills + Lab.goal.both
+    #analysis ~ Lab.goal.skills + Lab.goal.both
+    communication ~ Lab.goal.skills + Lab.goal.both
+    modeling ~ Lab.goal.skills + Lab.goal.both
+
+    student.score.post ~ agency + communication + modeling + Lab.goal.skills + Lab.goal.both
+'
+
+fit <- sem(mod.sem, data = df.FY, cluster = "ResponseId.CIS")
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+standardizedsolution(fit)
+resid(fit, type = 'cor')
+```
+
+# Partial SEMs
+```{r}
+mod.agency <- '
+  level: 1
+    student.score.post ~ student.score.pre
+  level: 2
+    agency =~ Q35_1 + Q35_2 + Q35_3 + Q35_4 + Q35_5 + Q34_3 + Q36_6
 
     agency ~ Lab.goal.skills + Lab.goal.both
 
     student.score.post ~ agency + Lab.goal.skills + Lab.goal.both
 '
 
-fit <- sem(mod.sem, data = df.matched, cluster = "ResponseId.CIS")
+mod.modeling <- '
+  level: 1
+    student.score.post ~ student.score.pre
+  level: 2
+    modeling =~ Q36_1 + Q36_2 + Q36_3 + Q36_4
+    #Q36_1 ~~ Q36_2 #+ Q36_3
+    #Q36_4 ~~ Q36_3 #+ Q36_2
+
+    modeling ~ Lab.goal.skills + Lab.goal.both
+
+    student.score.post ~ modeling + Lab.goal.skills + Lab.goal.both
+'
+
+mod.communication <- '
+  level: 1
+    student.score.post ~ student.score.pre
+  level: 2
+    communication =~ Q38_1 + Q38_2 + Q38_3 + Q38_4
+
+    communication ~ Lab.goal.skills + Lab.goal.both
+
+    student.score.post ~ communication + Lab.goal.skills + Lab.goal.both
+'
+
+fit <- sem(mod.agency, data = df.FY, cluster = "ResponseId.CIS")
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+standardizedsolution(fit)
+resid(fit, type = 'cor')
+
+fit <- sem(mod.modeling, data = df.FY, cluster = "ResponseId.CIS")
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+standardizedsolution(fit)
+resid(fit, type = 'cor')
+
+fit <- sem(mod.communication, data = df.FY, cluster = "ResponseId.CIS")
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+standardizedsolution(fit)
+resid(fit, type = 'cor')
+```
+
+
+# Partial SEMs with BFY dataset
+```{r}
+fit <- sem(mod.agency, data = df.BFY, cluster = "ResponseId.CIS")
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+standardizedsolution(fit)
+resid(fit, type = 'cor')
+
+fit <- sem(mod.modeling, data = df.BFY, cluster = "ResponseId.CIS")
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+standardizedsolution(fit)
+resid(fit, type = 'cor')
+
+fit <- sem(mod.communication, data = df.BFY, cluster = "ResponseId.CIS")
 summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
 standardizedsolution(fit)
 resid(fit, type = 'cor')

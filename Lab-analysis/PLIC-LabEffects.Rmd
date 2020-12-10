@@ -16,7 +16,11 @@ source('C:/Users/Cole/Documents/GitHub/PLIC/Processing-Scripts/PLIC_DataProcessi
 # Read and match
 ```{r}
 full.df <- fread('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
-  filter(Survey_x == 'C' | Survey_y == 'C')
+  filter(Survey_x == 'C' | Survey_y == 'C') %>%
+  mutate(V4_x = as.Date(V4_x),
+         V4_y = as.Date(V4_y)) %>%
+  filter(V4_y < as.Date('2020-01-01') | (is.na(V4_y) & 
+                                           V4_x < as.Date('2020-01-01')))
 
 # Remove FR scores
 full.df[full.df$Survey_x == 'F', 'PreScores'] <- NA_real_
@@ -93,25 +97,19 @@ table(df.matched[!duplicated(df.matched$Class_ID),]$Lab_purpose, exclude = NULL)
 # Data processing
 ```{r}
 # Creates new gender/race/major columns
-df.matched <- Collapse.vars(df.matched) %>%
+df.matched <- Collapse.vars(data.frame(df.matched)) %>%
   mutate(Lab_level = relevel(as.factor(case_when(
-    Lab_level == 'Intro-Algebra' ~ 'FY-Algebra',
-    Lab_level == 'Intro-Calculus' ~ 'FY-Calculus',
+    (Lab_level == 'Intro-Algebra') | (Lab_level == 'Intro-Calculus') ~ 'FY',
     (Lab_level == 'Sophomore') | (Lab_level == 'Junior') | 
-      (Lab_level == 'Senior') ~ 'BFY',
+      (Lab_level == 'Senior') | (Lab_level == 'Graduate') ~ 'BFY',
     TRUE ~ NA_character_
-  )), ref= 'FY-Algebra'),
+  )), ref = 'FY'),
   Lab_purpose = relevel(as.factor(case_when(
     Lab_purpose == 'Reinforce concepts' ~ 'Concepts-based',
     Lab_purpose == 'Both about equally' ~ 'Mixed',
-    Lab_purpose == 'Develop lab skills' ~ 'Skills-based')), ref = 'Concepts-based'))
-
-
+    Lab_purpose == 'Develop lab skills' ~ 'Skills-based')), 
+    ref = 'Concepts-based'))
 df.matched[is.na(df.matched)] <- 0
-df.matched[names(df.matched) %like% "Race"] <- 
-  lapply(df.matched[names(df.matched) %like% "Race"], factor, levels = c(1, 0))
-df.matched[names(df.matched) %like% "Race"] <- 
-  lapply(df.matched[names(df.matched) %like% "Race"], relevel, ref = '0')
 ```
 
 # Demographic breakdowns
@@ -123,10 +121,6 @@ table(df.matched$Lab_purpose)
 table(df.matched$Gender, df.matched$Lab_purpose)
 Race.ethnicity.table(df.matched, Lab.Purpose = TRUE)
 table(df.matched$Major, df.matched$Lab_purpose)
-
-chisq.test(df.matched[!duplicated(df.matched$Class_ID), 'Lab_purpose'], 
-           df.matched[!duplicated(df.matched$Class_ID), 'Lab_level'])
-summary(aov(PreScores ~ Lab_purpose, df.matched))
 ```
 
 # Descriptive statistics
@@ -174,20 +168,18 @@ plot.pre.post(df.matched, 'Lab_purpose')
 mod0 <- lmer(PostScores ~ (1 | anon_institution_id/Class_ID), df.matched)
 r2(mod0)
 
-mod <- lmer(PostScores ~ PreScores + Lab_level + Major + 
-              Lab_purpose * (Gender + Race.ethnicity.AmInd + 
-                               Race.ethnicity.Asian + Race.ethnicity.Black + 
-                               Race.ethnicity.Hispanic + 
-                               Race.ethnicity.NatHawaii + Race.ethnicity.White + 
-                               Race.ethnicity.Other) + 
+mod <- lmer(PostScores ~ PreScores + Lab_level + Lab_purpose * 
+              (Gender + Race.ethnicity.AmInd + Race.ethnicity.Asian + 
+                 Race.ethnicity.Black + Race.ethnicity.Hispanic + 
+                 Race.ethnicity.NatHawaii + Race.ethnicity.White + 
+                 Race.ethnicity.Other) + Major + 
               (1 | anon_institution_id/Class_ID), df.matched)
 summary(mod)
 r2(mod)
 
-noStandard.cols <- c('Lab_purpose', 'Lab_level', 'Major', 'Gender', 
-                     names(df.matched)[names(df.matched) %like% "Race"])
 class(mod) <- "lmerMod"
-mod.std <- beta(mod, skip = noStandard.cols)
+mod.std <- std_beta(mod, ci = 0.67)
+mod.std$uncertainty <- abs(mod.std$Std_Coefficient - mod.std$CI_low)
 ```
 
 # Variance inflation factors and model diagnostics
@@ -199,20 +191,26 @@ qqmath(mod)
 
 # Output stargazer
 ```{r, results = 'hide', message = FALSE, warning = FALSE, include = FALSE}
-rownames(mod.std$coefficients)[2] <- 'PreScores'
+labels = c("Constant", "Pretest", "BFY", "Mixed", "Skills-based", "Non-binary", 
+           "Unknown",  "Woman", "American Indian", "Asian", "Black", "Hispanic", 
+           "Native Hawaiian", "White", "Other", "Engineering", "Other", 
+           "Other Science", "Unknown", "Mixed * Non-binary", 
+           "Skills-based * Non-binary", "Mixed * Unknown", 
+           "Skills-based * Unknown", "Mixed * Woman", "Skills-based * Woman", 
+           "Mixed * American Indian", "Skills-based * American Indian", 
+           "Mixed * Native Hawaiian", "Skills-based * Native Hawaiian", 
+           "Mixed * Other",  "Skills-based * Other", "Mixed * Black", 
+           "Skills-based * Black", "Mixed * Hispanic", "Skills-based * Hispanic", 
+           "Mixed * Asian", "Skills-based * Asian", "Mixed * White", 
+           "Skills-based * White", "Mixed * Unknown", "Skills-based * Unknown")
 
-labels = c("Constant", "Pretest", "Both-based", "Skills-based", "BFY", 
-           "FY (calculus)", "Engineering", "Other", "Other Science", "Unknown", 
-           "Non-binary", "Unknown",  "Woman", "American Indian", "Asian", 
-           "Black", "Hispanic", "Native Hawaiian", "White", "Other")
-
-stargazer(mod, mod, mod, mod, coef = list(summary(mod)$coefficients[, 1], 
+stargazer(mod, mod, mod, mod, coef = list(summary(mod)$coefficients[, 1],
                                           summary(mod)$coefficients[, 2], 
-                                          mod.std$coefficients[, 1], 
-                                          mod.std$coefficients[, 2]), 
+                                          mod.std$Std_Coefficient,
+                                          mod.std$uncertainty), 
           se = list(summary(mod)$coefficients[, 2], NA, 
-                    mod.std$coefficients[, 2], NA), 
-          type='latex', intercept.bottom = FALSE, style = 'asr', 
+                    mod.std$uncertainty, NA), 
+          type = 'latex', intercept.bottom = FALSE, style = 'asr', 
           keep.stat = c('n'), column.labels = c('Beta', 'SE', 'Beta.std', 'SE'), 
           model.numbers = FALSE, covariate.labels = labels, 
           dep.var.labels = 'PLIC posttest scores', out ='PLIC_models.tex')
@@ -315,61 +313,14 @@ dev.off()
 
 # Process CIS items
 ```{r}
-df.matched[, names(df.matched) %like% "Q28|Q29|Q31"] <- 
-  data.frame(lapply(df.matched[, names(df.matched) %like% "Q28|Q29|Q31"], 
+df.matched[, names(df.matched) %like% "Q28|Q29|Q31|Q32|Q33"] <- 
+  data.frame(lapply(df.matched[, names(df.matched) %like% "Q28|Q29|Q31|Q32|Q33"], 
                     function(x) droplevels(factor(as.vector(x), 
-                                                  levels = c('1', '2', '3', '4', 
+                                                  levels = c('1', '2', '3', '4',
                                                              '5'), 
                                                   ordered = TRUE))))
 
-df.matched[, names(df.matched) %like% "Q28|Q29|Q31"] <- data.frame(lapply(df.matched[, names(df.matched) %like% "Q28|Q29|Q31"],
-                                                                          function(x) as.numeric(x)))
-```
-
-# Run CFA on CIS
-```{r}
-mod <- '
-  agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q29_6 + Q28_1 + Q28_2 + Q28_3
-'
-
-# unique classes only
-CIS.df <- unique(df.matched[, names(df.matched) %like% "Q28|Q29|Q31"])
-
-fit <- cfa(mod, CIS.df)
-summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
-semPaths(fit, whatLabels = 'std')
-resid(fit, type = 'cor')
-```
-
-# Run EFA on half of the dataset
-```{r}
-set.seed(11)
-inds <- sample(seq_len(nrow(CIS.df)), size = nrow(CIS.df)/2)
-CIS.train.df <- CIS.df[inds, names(CIS.df) %like% 'Q28|Q29']
-
-CIS.train.df
-
-fa.parallel(CIS.train.df)
-
-fit1 <- fa(CIS.train.df, 1)
-fit1
-fa.diagram(fit1)
-
-fit2 <- fa(CIS.train.df, 2)
-fit2
-fa.diagram(fit2)
-```
-
-# Run CFA on CIS with new model
-```{r}
-mod <- '
-  agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q28_1 + Q28_3
-'
-
-fit <- cfa(mod, CIS.df[-inds,])
-summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
-semPaths(fit, whatLabels = 'std')
-resid(fit, type = 'cor')
+df.matched[, names(df.matched) %like% "Q28|Q29|Q31|Q32|Q33"] <- data.frame(lapply(df.matched[, names(df.matched) %like% "Q28|Q29|Q31|Q32|Q33"],                                                           function(x) as.numeric(x)))
 ```
 
 # SEM with fixed measurement model
@@ -379,24 +330,116 @@ df.matched <- df.matched %>%
          Lab.goal.both = 1 * (Lab_purpose == 'Mixed'),
          Lab.goal.concepts = 1 * (Lab_purpose == 'Concepts-based'))
 
-mod.sem <- '
+df.FY <- df.matched %>%
+  filter(Lab_level == 'FY')
+df.BFY <- df.matched %>%
+  filter(Lab_level == 'BFY')
+
+mod.agency <- '
   level: 1
     PostScores ~ PreScores
   level: 2
-    agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q28_1 + Q28_3
-    Q29_3 ~~ Q29_4 + Q29_5
-    Q29_4 ~~ Q29_5
+    agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q28_1
 
     agency ~ Lab.goal.skills + Lab.goal.both
 
     PostScores ~ agency + Lab.goal.skills + Lab.goal.both
 '
 
-fit <- sem(mod.sem, data = df.matched, cluster = "Class_ID")
+mod.analysis <- '
+  level: 1
+    PostScores ~ PreScores
+  level: 2
+    analysis =~ Q32_1 + Q32_2
+
+    analysis ~ Lab.goal.skills + Lab.goal.both
+
+    PostScores ~ analysis + Lab.goal.skills + Lab.goal.both
+'
+
+mod.communication <- '
+  level: 1
+    PostScores ~ PreScores
+  level: 2
+    communication =~ Q33_1 + Q33_2 + Q33_3 + Q33_4
+
+    communication ~ Lab.goal.skills + Lab.goal.both
+
+    PostScores ~ communication + Lab.goal.skills + Lab.goal.both
+'
+
+
+fit <- sem(mod.agency, data = df.matched, cluster = "Class_ID")
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+standardizedsolution(fit)
+resid(fit, type = 'cor')
+
+fit <- sem(mod.analysis, data = df.matched, cluster = "Class_ID")
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+standardizedsolution(fit)
+resid(fit, type = 'cor')
+
+fit <- sem(mod.communication, data = df.matched, cluster = "Class_ID")
 summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
 standardizedsolution(fit)
 resid(fit, type = 'cor')
 ```
+
+```{r}
+df.FY[, names(df.FY) %like% "Class_ID|Q33|PreScores|PostScores"] %>%
+  group_by(Class_ID, Q33_1, Q33_2, Q33_3, Q33_4) %>%
+  summarize(avg.pre = mean(PreScores), avg.post = mean(PostScores), N = n()) %>%
+  mutate(com = 1 * Q33_1 + 1.069 * Q33_2 + 1.935 * Q33_3 + 0.509 * Q33_4,
+         avg.gain = avg.post - avg.pre) %>%
+  arrange(desc(com)) %>%
+  ungroup() %>%
+  select(-c('Q33_2', 'Q33_3', 'Q33_4')) %>%
+  ggplot(., aes(x = com, y = avg.gain)) +
+  geom_point()
+```
+
+
+```{r}
+df.FY <- unique(df.FY[, names(df.FY)[names(df.matched) %like% 
+                              "Q28|Q29|Q31|Q32|Q33|Lab_purpose|Lab.goal.skills"]])
+
+df.FY <- df.FY %>%
+  filter(Lab_purpose != 'Mixed') %>%
+  select(-Lab_purpose)
+
+cor(df.FY)
+```
+
+
+```{r}
+mod.sem <- '
+  level: 1
+    PostScores ~ PreScores
+  level: 2
+    agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q28_1
+    analysis =~ Q32_1 + Q32_2
+    #communication =~ Q33_1 + Q33_2 + Q33_3 + Q33_4
+    # modeling =~ Q36_1 + Q36_2 + Q36_3 + Q36_4 + Q36_5 + Q36_6 + Q36_7
+    #agency ~~ analysis + communication
+    #analysis ~~ communication
+
+    agency ~ Lab.goal.skills + Lab.goal.both
+    #analysis ~ Lab.goal.skills + Lab.goal.both
+    #communication ~ Lab.goal.skills + Lab.goal.both
+    # modeling ~ Lab.goal.skills + Lab.goal.both
+
+    PostScores ~ agency + Lab.goal.skills + Lab.goal.both
+'
+df.BFY <- df.BFY %>%
+  filter(Lab_purpose != 'Mixed') %>%
+  select(-Lab_purpose)
+
+fit <- sem(mod.sem, data = df.BFY, cluster = "Class_ID")
+summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+standardizedsolution(fit)
+resid(fit, type = 'cor')
+```
+
 
 # Check null model
 ```{r}
