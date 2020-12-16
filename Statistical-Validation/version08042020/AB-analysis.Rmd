@@ -1,3 +1,8 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
 # Setup
 
 ## Load necessary packages
@@ -54,6 +59,9 @@ df.students <- df.students %>%
   mutate(Likert = 1 * grepl('Likert', df.students$Condition),
          G2.First = 1 * grepl('2', df.students$Condition))
 ```
+Prefer not to examine all of these items individually because we'll run into multiple comparisons issues and troubles parsing all of this information, but I think it is worth looking at the first and last summary question (Q4a: Which group do you think did a better job? and Q148: What feature was most important for comparing the two teams?) We fail to reject the null hypothesis (at alpha = 0.05) that either distribution of selections differ by condition, but I think there are some trends in both, particularly in the effect of putting Group 2 first.
+
+For Q4a, more students look to pick Group 1 and less pick Group 2 when shown Group 2 first. Though less apparent, fewer students identify "Analysis" as being important when shown Group 2 first.
 
 ## Multinomial model of "Who did better?"
 ```{r, echo = FALSE}
@@ -87,6 +95,7 @@ cbind(dummy.df, predict(model, type = 'probs', newdata = dummy.df)) %>%
     geom_point(size = 4) +
     labs(title = 'Predicted probability of selection by condition')
 ```
+This multinomial illustrates these effects for Q4a. Showing the Likert items in the survey has little to no effect on students' responses to Q4a, but a greater proportion of students select Group 1 and N when shown Group 2 first. I think its easier to interpret the size of this effect by looking at the expected proportions because we had a 2x2 design. The fraction of students selecting Group 2 decreases from almost 0.5 to just below 0.4 when shown Group 2 first. The fraction selecting Group 1 conversely increases by almost 10 percentage points. These effects are considerably smaller for the Likert condition.
 
 ## Multinomial model of "What was most important?"
 ```{r, echo = FALSE}
@@ -119,6 +128,7 @@ cbind(dummy.df, predict(model, type = 'probs', newdata = dummy.df)) %>%
     geom_point(size = 4) +
     labs(title = 'Predicted probability of selection by condition')
 ```
+The effects for Q148 are smaller overall, but we again see that swapping the groups has a larger effect than including the Likert items, which is about zero.
 
 ## Other multinomial models
 ```{r, echo = FALSE}
@@ -143,7 +153,6 @@ for(Q in Questions[2:(length(Questions) - 1)]){
                                                                    'variable')))
 }
 
-model.df
 ggplot(model.df %>%
          filter(variable != 'X.Intercept.'), aes(x = variable, y = Coefficient)) +
   geom_violin() +
@@ -153,6 +162,9 @@ ggplot(model.df %>%
        title = 'Log odds ratios (vs. B) by effect for other items') +
   scale_x_discrete(labels = c('Likert', 'Group 2 first'))
 ```
+I've shown all the other 11 items here without distinguishing between items. A model was fit separately for each item. I think a couple things stand out. First, the Likert items have more variable effects on the summary items, but are generally negative (relative to B), indicating that including the Likert items increases the fraction of students that select B (as was the case with Q4a). Its worth keeping in mind that these effects are small and the error bars are quite large (but not shown for clarity, see below).
+
+Putting Group 2 first, conversely, generally increases the fraction of students that say Group 1 or neither group did well. The ratio of students selecting (Group 2/Both) remains more or less constant across all items, however.
 
 ### Disentangling collection of other multiple choice items
 ```{r, echo = FALSE}
@@ -168,6 +180,7 @@ ggplot(model.df, aes(x = Item, y = Coefficient, color = variable)) +
   labs(title = 'Log odds ratios (vs. B) by effect and item', color = 'Effect') +
   scale_color_discrete(labels = c('Likert', 'Group 2 first'))
 ```
+This plot extends on the above plot and separates effects by item and includes error bars.
 
 ### Aggregate multinomial model
 ```{r, echo = FALSE}
@@ -218,4 +231,6 @@ ggcoefstats(mod.intItem, output = 'tidy') %>%
   head(20) %>%
   ggcoefstats(., title = 'Effects (log odds ratios) for other items')
 ```
+I also constructed three aggregate models for the 11 remaining items. Overall, the effects are pretty small. Putting Group 2 has some small (positive) effect on the fraction of students selecting Group 1 or neither group and, as found above, the Likert items appear to increase the fraction of students that select 'both groups'.
 
+The interaction models indicated, as we found above, that the effects of the Likert items are more variable. I've only shown the 20 largest effects in the last plot.
