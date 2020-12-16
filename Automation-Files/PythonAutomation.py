@@ -1162,6 +1162,13 @@ def SendReport(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Cod
     		   Thank you again for participating in the PLIC. Please find attached a copy of the report summarizing the PLIC
     		   results for your course, {Course} ({Code}). Additionally, if you indicated to us that you are offering students credit
                for completing the survey we have included a CSV file with their names here.\n\n
+               We recently launched a data explorer app, allowing you to analyze data from your class in greater depth. The data explorer
+               tool is available at the following link:\n\n
+               https://cderatcornell.shinyapps.io/PLIC/\n\n
+               To use the data explorer app, you must provide your unique class identifier (beginning with R_). This class ID was provided
+               in correspondence emails sent from cperl@cornell.edu. If you cannot find your class ID, email cperl@cornell.edu. From the data
+               explorer app, you may also download IDENTIFIABLE student data from your class to use in additional offline analyses.\n\n
+               Note that data is not made immediately available in the data explorer. The system is updated twice a year in January and June.\n\n
     		   We are continuing to test and improve our new report generation system, so please let us know by replying to this
     		   email if you have any questions, comments, or suggestions regarding this new report format.\n \n
 
@@ -1178,6 +1185,13 @@ def SendReport(InstructorFirst, InstructorLast, InstructorEmail, CourseName, Cod
     		   Thank you again for participating in the PLIC. Please find attached a copy of the report summarizing the PLIC
     		   results for your course, {Course} ({Code}). Additionally, if you indicated to us that you are offering students credit
                for completing the survey we have included a CSV file with their names here.<br><br>
+               We recently launched a data explorer app, allowing you to analyze data from your class in greater depth. The data explorer
+               tool is available at the following link:<br><br>
+               https://cderatcornell.shinyapps.io/PLIC/<br><br>
+               To use the data explorer app, you must provide your unique class identifier (beginning with R_). This class ID was provided
+               in correspondence emails sent from cperl@cornell.edu. If you cannot find your class ID, email cperl@cornell.edu. From the data
+               explorer app, you may also download IDENTIFIABLE student data from your class to use in additional offline analyses.<br><br>
+               Note that data is not made immediately available in the data explorer. The system is updated twice a year in January and June.<br><br>
     		   We are continuing to test and improve our new report generation system, so please let us know by replying to this
     		   email if you have any questions, comments, or suggestions regarding this new report format. <br><br>
 
