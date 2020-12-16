@@ -5,14 +5,11 @@
 library(plyr)
 library(readr)
 library(tidyverse)
-library(DescTools)
 library(ryouready)
-library(reshape2)
-library(stringr)
+library(nnet)
 library(ggthemes)
-library(cluster)
-library(factoextra)
-library(DescTools)
+library(reshape2)
+library(ggstatsplot)
 theme_set(theme_fivethirtyeight())
 ```
 
@@ -25,22 +22,200 @@ header = read.csv(files[1], header = F, nrows = 1, as.is = T)
 df.students = ldply(files, read.csv, header = T, skip = 1) %>%
   `colnames<-`(header) %>%
   filter(V5 == 1) %>%
-  filter((Qt1_3 > 30) | (Qt2_3 > 30) | (Qt3_3 > 30) | (Qt4_3 > 3))
-df.students = df.students[df.students[, 'Unnamed: 7'] == 1,]
+  filter((Qt1_3 > 30) | (Qt2_3 > 30) | (Qt3_3 > 30) | (Qt4_3 > 30))
+df.students <- df.students[df.students[, 'Unnamed: 7'] == 1,]
 ```
 
 # Analysis
-```{r}
+
+## Plots and chi-squared tests
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+table(df.students$Condition)
+
 Questions <- c('Q4a', 'Q152_1',	'Q152_2', 'Q152_3',	'Q152_4', 'Q153_1', 'Q153_2', 'Q153_3', 'Q154_1', 'Q154_2', 'Q154_3', 'Q154_4', 'Q148')
+
+df.students <- recode2(df.students, vars = Questions, 
+                       recodes = "1 = '1'; 2 = '2'; 3 = 'B'; 4 = 'N'")
+df.students <- recode2(df.students, vars = 'Q148', 
+                       recodes = "'1' = 'Methods'; '2' = 'Amt. of data'; 
+                       'B' = 'Analysis'; 'N' = 'Other'")
 
 for(Q in Questions){
   df.students[, Q] <- as.factor(df.students[, Q])
   p <- ggplot(df.students, aes_string(x = 'Condition', fill = Q, 
                                group = Q)) +
-  geom_bar(position = 'dodge')
+  geom_bar(position = 'dodge') 
   
   print(p)
   print(chisq.test(df.students$Condition, df.students[, Q]))
 }
+
+df.students <- df.students %>% 
+  mutate(Likert = 1 * grepl('Likert', df.students$Condition),
+         G2.First = 1 * grepl('2', df.students$Condition))
+```
+
+## Multinomial model of "Who did better?"
+```{r, echo = FALSE}
+df.students$Q4a <- relevel(df.students$Q4a, ref = 'B')
+model <- multinom(Q4a ~ Likert + G2.First, df.students)
+
+ggcoefstats(model, output = 'tidy') %>%
+  filter(!grepl('Intercept', term)) %>%
+  mutate(term = gsub('G2.First', 'Group 2 first', term),
+         term = gsub('_N', ' (N/B)', term),
+         term = gsub('_2', ' (2/B)', term),
+         term = gsub('_1', ' (1/B)', term)) %>%
+  arrange(desc(term)) %>%
+  ggcoefstats(., title = 'Which group did a better job? (Log odds ratios)')
+
+dummy.df <- data.frame(Likert = c(0, 1, 0, 1), G2.First = c(0, 0, 1, 1))
+cbind(dummy.df, predict(model, type = 'probs', newdata = dummy.df)) %>%
+  mutate(Condition = case_when(
+    (Likert == 1) & (G2.First == 0) ~ 'Likert',
+    (Likert == 0) & (G2.First == 1) ~ 'Group 2 first',
+    (Likert == 1) & (G2.First == 1) ~ 'Likert/Group 2 first',
+    TRUE ~ 'No Likert/Group 1 first'
+  )) %>%
+  dplyr::select(-Likert, -G2.First) %>%
+  melt(., id.vars = 'Condition', variable.name = 'Selection',
+       value.name = 'Probability') %>%
+  ggplot(., aes(x = factor(Condition, levels = c('No Likert/Group 1 first', 
+                                                 'Likert', 'Group 2 first', 
+                                                 'Likert/Group 2 first')), 
+                           y = Probability, color = Selection)) +
+    geom_point(size = 4) +
+    labs(title = 'Predicted probability of selection by condition')
+```
+
+## Multinomial model of "What was most important?"
+```{r, echo = FALSE}
+df.students$Q148 <- relevel(df.students$Q148, ref = 'Analysis')
+model <- multinom(Q148 ~ Likert + G2.First, df.students)
+
+ggcoefstats(model, output = 'tidy') %>%
+  filter(!grepl('Intercept|Other', term)) %>%
+  mutate(term = gsub('G2.First', 'Group 2 first', term),
+         term = gsub('_Amt. of data', ' (Amt. of data/Analysis)', term),
+         term = gsub('_Methods', ' (Methods/Analysis)', term)) %>%
+  arrange(desc(term)) %>%
+  ggcoefstats(., title = 'What criteria did you use? (Log odds ratios)')
+
+dummy.df <- data.frame(Likert = c(0, 1, 0, 1), G2.First = c(0, 0, 1, 1))
+cbind(dummy.df, predict(model, type = 'probs', newdata = dummy.df)) %>%
+  mutate(Condition = case_when(
+    (Likert == 1) & (G2.First == 0) ~ 'Likert',
+    (Likert == 0) & (G2.First == 1) ~ 'Group 2 first',
+    (Likert == 1) & (G2.First == 1) ~ 'Likert/Group 2 first',
+    TRUE ~ 'No Likert/Group 1 first'
+  )) %>%
+  dplyr::select(-Likert, -G2.First) %>%
+  melt(., id.vars = 'Condition', variable.name = 'Selection',
+       value.name = 'Probability') %>%
+  ggplot(., aes(x = factor(Condition, levels = c('No Likert/Group 1 first', 
+                                                 'Likert', 'Group 2 first', 
+                                                 'Likert/Group 2 first')), 
+                           y = Probability, color = Selection)) +
+    geom_point(size = 4) +
+    labs(title = 'Predicted probability of selection by condition')
+```
+
+## Other multinomial models
+```{r, echo = FALSE}
+model.df <- data.frame(y = character(), Item = character(), variable = character(),
+                       Coefficient = numeric(), Std.Error = numeric())
+for(Q in Questions[2:(length(Questions) - 1)]){
+  df.students[, Q] <- relevel(df.students[, Q], ref = 'B')
+  
+  mod <- multinom(as.formula(paste(Q, " ~ Likert + G2.First")), df.students)
+  
+  coefs <- data.frame(summary(mod)$coefficients) %>%
+    mutate(y = row.names(.),
+           Item = Q) %>%
+    melt(., id.vars = c('y', 'Item'), value.name = 'Coefficient')
+  
+  std.errors <- data.frame(summary(mod)$standard.errors) %>%
+    mutate(y = row.names(.),
+           Item = Q) %>%
+    melt(., id.vars = c('y', 'Item'), value.name = 'Std.Error')
+  
+  model.df <- rbind(model.df, inner_join(coefs, std.errors, by = c('y', 'Item', 
+                                                                   'variable')))
+}
+
+model.df
+ggplot(model.df %>%
+         filter(variable != 'X.Intercept.'), aes(x = variable, y = Coefficient)) +
+  geom_violin() +
+  geom_point() +
+  facet_wrap(~y) +
+  labs(x = 'Effect', y = 'Log odds ratio (compared to B)', 
+       title = 'Log odds ratios (vs. B) by effect for other items') +
+  scale_x_discrete(labels = c('Likert', 'Group 2 first'))
+```
+
+### Disentangling collection of other multiple choice items
+```{r, echo = FALSE}
+model.df <- model.df %>%
+  filter(variable != 'X.Intercept.') %>%
+  rowwise() %>%
+  mutate(Set = strsplit(Item, '_')[[1]][1])
+
+ggplot(model.df, aes(x = Item, y = Coefficient, color = variable)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = Coefficient - 1.96 * Std.Error, ymax = Coefficient + 1.96 * Std.Error), width = 0.1) +
+  facet_grid(y~Set, scales = 'free_x') +
+  labs(title = 'Log odds ratios (vs. B) by effect and item', color = 'Effect') +
+  scale_color_discrete(labels = c('Likert', 'Group 2 first'))
+```
+
+### Aggregate multinomial model
+```{r, echo = FALSE}
+df.students.long <- df.students %>%
+  select(c(Questions[2:(length(Questions) - 1)], 'Likert', 'G2.First')) %>%
+  melt(., id.vars = c('Likert', 'G2.First'), variable.name = 'Item', 
+       value.name = 'Selection') %>%
+  rowwise() %>%
+  mutate(Set = strsplit(as.character(Item), '_')[[1]][1])
+
+mod <- multinom(relevel(as.factor(Selection), ref = 'B') ~ Likert + G2.First, df.students.long)
+
+mod.intSet <- multinom(relevel(as.factor(Selection), 
+                               ref = 'B') ~ Set * (Likert + G2.First), 
+                       df.students.long)
+
+mod.intItem <- multinom(relevel(as.factor(Selection), 
+                               ref = 'B') ~ Item * (Likert + G2.First), 
+                       df.students.long)
+
+ggcoefstats(mod, output = 'tidy') %>%
+  filter(!grepl('Intercept|Other', term)) %>%
+  mutate(term = gsub('G2.First', 'Group 2 first', term),
+         term = gsub('_N', ' (N/B)', term),
+         term = gsub('_2', ' (2/B)', term),
+         term = gsub('_1', ' (1/B)', term)) %>%
+  arrange(desc(term)) %>%
+  ggcoefstats(., title = 'Effects (log odds ratios) for other items')
+
+ggcoefstats(mod.intSet, output = 'tidy') %>%
+  filter(!grepl('Intercept|Other', term)) %>%
+  filter(grepl('Likert|G2.First', term)) %>%
+  mutate(term = gsub('G2.First', 'Group 2 first', term),
+         term = gsub('_N', ' (N/B)', term),
+         term = gsub('_2', ' (2/B)', term),
+         term = gsub('_1', ' (1/B)', term)) %>%
+  arrange(desc(abs(estimate))) %>%
+  ggcoefstats(., title = 'Effects (log odds ratios) for other items')
+
+ggcoefstats(mod.intItem, output = 'tidy') %>%
+  filter(!grepl('Intercept|Other', term)) %>%
+  filter(grepl('Likert|G2.First', term)) %>%
+  mutate(term = gsub('G2.First', 'Group 2 first', term),
+         term = gsub('t_N', 't (N/B)', term),
+         term = gsub('t_2', 't (2/B)', term),
+         term = gsub('t_1', 't (1/B)', term)) %>%
+  arrange(desc(abs(estimate))) %>%
+  head(20) %>%
+  ggcoefstats(., title = 'Effects (log odds ratios) for other items')
 ```
 
