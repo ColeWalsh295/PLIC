@@ -15,6 +15,8 @@ library(nnet)
 library(ggthemes)
 library(reshape2)
 library(ggstatsplot)
+library(MRCV)
+library(DescTools)
 theme_set(theme_fivethirtyeight())
 ```
 
@@ -29,16 +31,24 @@ df.students = ldply(files, read.csv, header = T, skip = 1) %>%
   filter(V5 == 1) %>%
   filter((Qt1_3 > 30) | (Qt2_3 > 30) | (Qt3_3 > 30) | (Qt4_3 > 30))
 df.students <- df.students[df.students[, 'Unnamed: 7'] == 1,]
+
+info <- data.frame(lapply(read.csv(files[1], nrows = 1), 
+                          FUN = function(x) gsub("^.*- ", "", x)))
 ```
 
 # Analysis
 
 ## Plots and chi-squared tests
 ```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# 4 conditions, 2x2; Likert means the student received Likert items on the first
+# three pages, None means they did not. 1/2 refers to which group the student saw 
+# first
 table(df.students$Condition)
 
 Questions <- c('Q4a', 'Q152_1',	'Q152_2', 'Q152_3',	'Q152_4', 'Q153_1', 'Q153_2', 'Q153_3', 'Q154_1', 'Q154_2', 'Q154_3', 'Q154_4', 'Q148')
 
+# need to recode questions, throughout Group 1 is synonymous with Team Panda and
+# Group 2 is synonymous with Team Ostrich
 df.students <- recode2(df.students, vars = Questions, 
                        recodes = "1 = '1'; 2 = '2'; 3 = 'B'; 4 = 'N'")
 df.students <- recode2(df.students, vars = 'Q148', 
@@ -49,8 +59,11 @@ for(Q in Questions){
   df.students[, Q] <- as.factor(df.students[, Q])
   p <- ggplot(df.students, aes_string(x = 'Condition', fill = Q, 
                                group = Q)) +
-  geom_bar(position = 'dodge') 
+    geom_bar(position = 'dodge') +
+    labs(title = info[, Q]) +
+    theme(plot.title = element_text(size = 12))
   
+  print(info[, Q])
   print(p)
   print(chisq.test(df.students$Condition, df.students[, Q]))
 }
@@ -65,11 +78,13 @@ For Q4a, more students look to pick Group 1 and less pick Group 2 when shown Gro
 
 ## Multinomial model of "Who did better?"
 ```{r, echo = FALSE}
+# we'll use 'Both' as the base level throughout because its neutral and more common
+# than 'Neither' increasing precision
 df.students$Q4a <- relevel(df.students$Q4a, ref = 'B')
 model <- multinom(Q4a ~ Likert + G2.First, df.students)
 
 ggcoefstats(model, output = 'tidy') %>%
-  filter(!grepl('Intercept', term)) %>%
+  filter(!grepl('Intercept', term)) %>% # we don't care about the intercepts
   mutate(term = gsub('G2.First', 'Group 2 first', term),
          term = gsub('_N', ' (N/B)', term),
          term = gsub('_2', ' (2/B)', term),
@@ -103,7 +118,7 @@ df.students$Q148 <- relevel(df.students$Q148, ref = 'Analysis')
 model <- multinom(Q148 ~ Likert + G2.First, df.students)
 
 ggcoefstats(model, output = 'tidy') %>%
-  filter(!grepl('Intercept|Other', term)) %>%
+  filter(!grepl('Intercept|Other', term)) %>% #...or the 'other' item
   mutate(term = gsub('G2.First', 'Group 2 first', term),
          term = gsub('_Amt. of data', ' (Amt. of data/Analysis)', term),
          term = gsub('_Methods', ' (Methods/Analysis)', term)) %>%
@@ -135,6 +150,7 @@ The effects for Q148 are smaller overall, but we again see that swapping the gro
 model.df <- data.frame(y = character(), Item = character(), variable = character(),
                        Coefficient = numeric(), Std.Error = numeric())
 for(Q in Questions[2:(length(Questions) - 1)]){
+  # we fit each of the 11 models separately
   df.students[, Q] <- relevel(df.students[, Q], ref = 'B')
   
   mod <- multinom(as.formula(paste(Q, " ~ Likert + G2.First")), df.students)
@@ -173,9 +189,13 @@ model.df <- model.df %>%
   rowwise() %>%
   mutate(Set = strsplit(Item, '_')[[1]][1])
 
+# refresher on what the item codes mean
+data.frame(t(info[, Questions[2:(length(Questions) - 1)]]))
+
 ggplot(model.df, aes(x = Item, y = Coefficient, color = variable)) +
   geom_point(size = 3) +
-  geom_errorbar(aes(ymin = Coefficient - 1.96 * Std.Error, ymax = Coefficient + 1.96 * Std.Error), width = 0.1) +
+  geom_errorbar(aes(ymin = Coefficient - 1.96 * Std.Error, 
+                    ymax = Coefficient + 1.96 * Std.Error), width = 0.1) +
   facet_grid(y~Set, scales = 'free_x') +
   labs(title = 'Log odds ratios (vs. B) by effect and item', color = 'Effect') +
   scale_color_discrete(labels = c('Likert', 'Group 2 first'))
@@ -201,6 +221,7 @@ mod.intItem <- multinom(relevel(as.factor(Selection),
                                ref = 'B') ~ Item * (Likert + G2.First), 
                        df.students.long)
 
+# model with all items combined
 ggcoefstats(mod, output = 'tidy') %>%
   filter(!grepl('Intercept|Other', term)) %>%
   mutate(term = gsub('G2.First', 'Group 2 first', term),
@@ -210,6 +231,7 @@ ggcoefstats(mod, output = 'tidy') %>%
   arrange(desc(term)) %>%
   ggcoefstats(., title = 'Effects (log odds ratios) for other items')
 
+# ...including interactions by grouping set
 ggcoefstats(mod.intSet, output = 'tidy') %>%
   filter(!grepl('Intercept|Other', term)) %>%
   filter(grepl('Likert|G2.First', term)) %>%
@@ -220,6 +242,7 @@ ggcoefstats(mod.intSet, output = 'tidy') %>%
   arrange(desc(abs(estimate))) %>%
   ggcoefstats(., title = 'Effects (log odds ratios) for other items')
 
+# ..including interactions by individual items
 ggcoefstats(mod.intItem, output = 'tidy') %>%
   filter(!grepl('Intercept|Other', term)) %>%
   filter(grepl('Likert|G2.First', term)) %>%
@@ -234,3 +257,59 @@ ggcoefstats(mod.intItem, output = 'tidy') %>%
 I also constructed three aggregate models for the 11 remaining items. Overall, the effects are pretty small. Putting Group 2 has some small (positive) effect on the fraction of students selecting Group 1 or neither group and, as found above, the Likert items appear to increase the fraction of students that select 'both groups'.
 
 The interaction models indicated, as we found above, that the effects of the Likert items are more variable. I've only shown the 20 largest effects in the last plot.
+
+## "What to do next" questions
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# pull only the 'what's next' questions (and condition variables)
+df.next <- df.students[, 
+                       grepl('(Q(134|336|2e|348|147)_(\\d+)$|Condition|Likert|G2.First)',
+                             names(df.students))] %>%
+  mutate(id = row.names(.)) %>% # need an ID column to convert back to wide
+  melt(., id.vars = c('id', 'Condition', 'Likert', 'G2.First'), 
+       variable.name = 'Item') %>%
+  # combine 'next' questions from Likert and None conditions into single variable
+  mutate(value = ifelse(is.na(value), 0, 1),
+         Item = str_replace(Item, '336', '134'),
+         Item = str_replace(Item, '348', '2e')) %>% 
+  rowwise() %>%
+  mutate(Question = strsplit(as.character(Item), '_')[[1]][1],
+         Item = strsplit(as.character(Item), '_')[[1]][2]) %>%
+  mutate(Question = case_when(
+    Question == 'Q134' ~ 'Group 1',
+    Question == 'Q2e' ~ 'Group 2',
+    TRUE ~ 'Group 2 (cont.)'
+  ))
+
+set.seed(11) # for consistency
+for(Q in c('Group 1', 'Group 2', 'Group 2 (cont.)')){
+  df.dummy <- df.next %>%
+    filter(Question == Q)
+  
+  p <- ggplot(df.dummy %>%
+                filter(value == 1), 
+              aes(x = Item, fill = Condition)) +
+    geom_bar(position = 'dodge') +
+    labs(title = paste('What to do next?', Q))
+  print(p)
+  
+  if(Q == 'Group 1'){ # pull info for specific set of questions
+    info.temp <- info[, names(info)[names(info) %like% 'Q134_(\\d+)$']]
+  } else if(Q == 'Group 2'){
+    info.temp <- info[, names(info)[names(info) %like% 'Q2e_(\\d+)$']]
+  } else{
+    info.temp <- info[, names(info)[names(info) %like% 'Q147_(\\d+)$']]
+  }
+  names(info.temp) <- unlist(lapply(names(info.temp), 
+                                    function(x) strsplit(x, '_')[[1]][2]))
+  print(data.frame(t(info.temp)))
+  
+  # need to convert dataset for question back to wide form to use with MI.test
+  print(MI.test(dcast(df.dummy, formula = id + Condition ~ Item,
+                      fun.aggregate = sum, value.var = "value") %>%
+                  select(-id), I = 1, 
+          J = length(unique(df.dummy$Item)), B = 2000, print.status = FALSE))
+}
+```
+MI.test uses three methods for conducting chi-squared tests of independence with multiple response categorical variables (MRCV), which violate regular chi-squared test assumptions of mutual exclusivity. All three methods produced similar p-values for each of the three methods questions (Group 1: p = (0.10, 0.16), Group 2: p = (0.004, 0.011), Group 2, cont: p = (<0.0005, 0.007)), suggesting that we can't say there are any differences in how students respond to Group 1's "what's next?" questions regardless of condition. For Group 2 and Group 2 (cont.), we can make this conclusion, but looking at the individual item chi-squared values and the plots, the differences in distributions are driven by one item in both cases: 34 -- "Repeat the experiment with more and different masses" and, again, is mainly affected by the ordering of the groups. In both conditions where students saw Group 2 first, they were more likely to say that the group should test more masses, which makes sense. When students see Group 1 first, then Group 2, the number of masses tested by Group 2 doesn't sound so bad.
+
+Overall, just looking at the plots, the group ordering effect is more pronounced than the effect of the Likert items. Effects of group ordering would look like ||_||_ or _||_|| (e.g., up/down/up/down), whereas effects of Likert items would look like |||__ or __||| (e.g., up/up/down/down).
