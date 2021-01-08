@@ -415,8 +415,11 @@ def MidSurveyControl():
                 SendSurveyMemo(MasterDF.loc[Index, 'ID'], MasterDF.loc[Index, 'First Name'], MasterDF.loc[Index, 'Last Name'], MasterDF.loc[Index, 'Email'], MasterDF.loc[Index, 'Course Name'], MasterDF.loc[Index, 'Course Number'], MidCloseDate, 'MID')
                 MasterDF.loc[Index, 'Mid-Survey Memo'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
 
-            if(pd.isnull(MasterDF.loc[Index, 'Mid-Survey Sent'])):
-                SendSurvey(MasterDF.loc[Index, 'ID'], MasterDF.loc[Index, 'First Name'], MasterDF.loc[Index, 'Last Name'], MasterDF.loc[Index, 'Email'], MasterDF.loc[Index, 'Course Name'], MasterDF.loc[Index, 'Course Number'], SurveyURL, MidCloseDate, 'MID')
+            elif((CurrentTime >= MidCloseDate - datetime.timedelta(days = 14)) and pd.isnull(MasterDF.loc[Index, 'Mid-Survey Sent'])):
+                if(pd.isnull(MasterDF.loc[Index, 'Mid-Survey Memo'])):
+                    MasterDF.loc[Index, 'Mid-Survey Memo'] = time.strftime("%d-%b-%Y %H:%M:%S", time.localtime())
+                ActivateSurvey(MidID)
+                SendSurvey(MasterDF.loc[Index, 'ID'], MasterDF.loc[Index, 'First Name'], MasterDF.loc[Index, 'Last Name'], MasterDF.loc[Index, 'Email'], MasterDF.loc[Index, 'Course Name'], MasterDF.loc[Index, 'Course Number'], SurveyURL, PostCloseDate, 'MID')
                 MasterDF.loc[Index, 'Mid-Survey Sent'] = time.strftime("%d-%b-%Y %H:%M:%S",time.localtime())
 
             elif((CurrentTime >= (MidCloseDate - datetime.timedelta(days = 4))) and pd.isnull(MasterDF.loc[Index, 'Mid-Survey Reminder'])):
