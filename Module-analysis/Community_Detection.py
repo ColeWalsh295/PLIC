@@ -88,13 +88,13 @@ def LANS(A, alpha = 0.05):
 
     return C
 
-def FindCommunities(df, Survey = 'PRE', Matched = False, Projection = 'Item', resolution = 1, Community_Nodes = False, Iterate = False, Sparsify = False,
+def FindCommunities(df, Survey = 'ALL', Matched = False, Projection = 'Item', resolution = 1, Community_Nodes = False, Iterate = False, Sparsify = False,
                         randomize = False, **kwargs):
     """Conduct module analysis using louvain method to find communities.
 
     Keyword arguments:
     df -- pandas dataframe of student responses
-    Survey -- either PRE or POST
+    Survey -- either PRE, POST, or ALL
     Matched -- binary; whether to only include matched responses in analysis
     Projection -- accepts either Item or Students; which level to perform community detection
     resolution -- a smaller resolution will create more smaller communities
@@ -111,29 +111,47 @@ def FindCommunities(df, Survey = 'PRE', Matched = False, Projection = 'Item', re
     Others = ['Q1b_19', 'Q1d_10', 'Q1e_12', 'Q2b_38', 'Q2d_11', 'Q2e_11', 'Q3b_10', 'Q3d_29', 'Q3e_8', 'Q4b_11'] # remove other columns
 
     if(Survey == 'PRE'):
-        appendix = 'x'
+        appendix = '_x'
         if Matched:
             df1 = df[(df['Survey_x'] == 'C') & (df['Survey_y'] == 'C')]
         else:
             df1 = df[df['Survey_x'] == 'C']
-    else:
-        appendix = 'y'
+    elif(Survey == 'POST'):
+        appendix = '_y'
         if Matched:
             df1 = df[(df['Survey_x'] == 'C') & (df['Survey_y'] == 'C')]
         else:
             df1 = df[df['Survey_y'] == 'C']
-    ID = 'V1_' + appendix
+    else:
+        appendix = ''
+        if Matched:
+            df1 = df[(df['Survey_x'] == 'C') & (df['Survey_y'] == 'C')]
+        else:
+            df1 = df[df['Survey_x'] == 'C']
+            df2 = df[df['Survey_y'] == 'C']
+    ID = 'V1' + appendix
 
-    cols_total = []
     Questions = ['Q1b', 'Q1d', 'Q1e', 'Q2b', 'Q2d', 'Q2e', 'Q3b', 'Q3d', 'Q3e', 'Q4b']
-    for Question in Questions:
-        cols = [col for col in df1.columns if Question in col and col[:-2] not in Others and 'TEXT' not in col and 'l' not in col and appendix in col]
-        cols_total = cols_total + cols
+    if(Survey != 'ALL'):
+        cols = [col for col in df1.columns for Question in Questions if Question in col and col[:-2] not in Others and 'TEXT' not in col and 'l' not in col and appendix in col]
+        df_total = df1[[ID] + cols]
+        cols = [col[:-2] for col in df_total.columns]
+        df_total.columns = cols
+    else:
+        cols1 = [col for col in df1.columns for Question in Questions if Question in col and col[:-2] not in Others and 'TEXT' not in col and 'l' not in col and '_x' in col]
+        cols2 = [col for col in df2.columns for Question in Questions if Question in col and col[:-2] not in Others and 'TEXT' not in col and 'l' not in col and '_y' in col]
 
-    df_total = df1[[ID] + cols_total]
-    df_total.loc[:, cols_total] = df_total.loc[:, cols_total].fillna(0).apply(pd.to_numeric, errors = 'coerce').fillna(1).replace(0, np.nan)
-    cols = [col[:-2] for col in df_total.columns]
-    df_total.columns = cols
+        df1 = df1[['V1_x'] + cols1]
+        df2 = df2[['V1_y'] + cols2]
+
+        cols = [col[:-2] for col in df1.columns]
+        df1.columns = cols
+        df2.columns = cols
+        df_total = pd.concat([df1, df2], axis = 0)
+
+    print(len(df_total))
+
+    df_total.loc[:, cols[1:]] = df_total.loc[:, cols[1:]].fillna(0).apply(pd.to_numeric, errors = 'coerce').fillna(1).replace(0, np.nan)
     Node_Sizes = df_total.fillna(0).sum(numeric_only = True).to_dict()
     df_total_Bipartite = pd.melt(df_total, id_vars = 'V1').dropna().reset_index(drop = True)[['V1', 'variable']].rename(columns = {'V1':'Student',
                                     'variable':'item'})
@@ -315,7 +333,7 @@ def SankeyNodeShifts(Community_Predf, Community_Postdf):
             color = "black",
             width = 0.5
           ),
-          label = ["Pre_Com_" + str(i) for i in range(Community_Predf['Community'].max() + 1)] + ["Post_Com_" + str(i) for i in range(Community_Postdf['Community'].max() + 1)],
+          label = ["Pretest community " + str(i) for i in range(Community_Predf['Community'].max() + 1)] + ["Posttest community " + str(i) for i in range(Community_Postdf['Community'].max() + 1)],
           color = ["blue" for i in range(Community_Predf['Community'].max() + 1)] + ["red" for i in range(Community_Postdf['Community'].max() + 1)]
         ),
         link = dict(
@@ -325,9 +343,9 @@ def SankeyNodeShifts(Community_Predf, Community_Postdf):
       ))
 
     layout =  dict(
-        title = "Item-Community Shifts",
+        title = "Response choice community Shifts",
         font = dict(
-          size = 10
+          size = 20
         )
     )
 
