@@ -2,50 +2,83 @@ library(tidyverse)
 library(data.table)
 library(docstring)
 
-Collapse.vars <- function(df){
+Collapse.vars <- function(df, matched = TRUE){
   #' Create readable demographic variables
   #' 
   #' @param df data.frame of merged PLIC responses
+  #' @param matched whether to use matched prepost data or long data
   #' 
   #' returns data.frame with appended demographic columns
   
   # we take posttest survey entries when available, otherwise pretest
-  df <- df %>%
-    mutate(Major = case_when(
-      (Q6b_y == 1) | (Q6b_y == 2) | (Q6b_y == 3) ~ 'Physics',
-      Q6b.i_y == 1 ~ 'Engineering',
-      (Q6b.i_y == 2) | (Q6b.i_y == 3) ~ 'Other science',
-      Q6b.i_y == 4 ~ 'Other',
-      (Q6b_x == 1) | (Q6b_x == 2) | (Q6b_x == 3) ~ 'Physics',
-      Q6b.i_x == 1 ~ 'Engineering',
-      (Q6b.i_x == 2) | (Q6b.i_x == 3) ~ 'Other science',
-      Q6b.i_x == 4 ~ 'Other',
-      TRUE ~ 'Unknown'),
-      Gender = case_when(
-        (Q6e_3_y == 1) | (Q6e_7_y == 1) ~ 'Non-binary',
-        Q6e_2_y == 1 ~ 'Woman',
-        Q6e_1_y == 1 ~ 'Man',
-        (Q6e_3_x == 1) | (Q6e_7_x == 1) ~ 'Non-binary',
-        Q6e_2_x == 1 ~ 'Woman',
-        Q6e_1_x == 1 ~ 'Man',
-        TRUE ~ 'Unknown'
-      ),
-      Race.ethnicity.AmInd = 1 * ((Q6f_1_y == 1) | (Q6f_1_x == 1)),
-      Race.ethnicity.Asian = 1 * ((Q6f_2_y == 1) | (Q6f_2_x == 1)),
-      Race.ethnicity.Black = 1 * ((Q6f_3_y == 1) | (Q6f_3_x == 1)),
-      Race.ethnicity.Hispanic = 1 * ((Q6f_4_y == 1) | (Q6f_4_x == 1)),
-      Race.ethnicity.NatHawaii = 1 * ((Q6f_5_y == 1) | (Q6f_5_x == 1)),
-      Race.ethnicity.White = 1 * ((Q6f_6_y == 1) | (Q6f_6_x == 1)),
-      Race.ethnicity.Other = 1 * ((Q6f_7_y == 1) | (Q6f_7_x == 1)),
-      Race.ethnicity.unknown = 1 * ((Race.ethnicity.AmInd == 0) & 
-                                      (Race.ethnicity.Asian == 0) & 
-                                      (Race.ethnicity.Black == 0) & 
-                                      (Race.ethnicity.Hispanic == 0) & 
-                                      (Race.ethnicity.NatHawaii == 0) & 
-                                      (Race.ethnicity.White == 0) & 
-                                      (Race.ethnicity.Other == 0))) %>%
-    mutate(Major = relevel(as.factor(Major), ref = 'Physics'),
-           Gender = relevel(as.factor(Gender), ref = 'Man'))
+  if(matched){
+    df <- df %>%
+      mutate(Major = case_when(
+        (Q6b_y == 1) | (Q6b_y == 2) | (Q6b_y == 3) ~ 'Physics',
+        Q6b.i_y == 1 ~ 'Engineering',
+        (Q6b.i_y == 2) | (Q6b.i_y == 3) ~ 'Other science',
+        Q6b.i_y == 4 ~ 'Other',
+        (Q6b_x == 1) | (Q6b_x == 2) | (Q6b_x == 3) ~ 'Physics',
+        Q6b.i_x == 1 ~ 'Engineering',
+        (Q6b.i_x == 2) | (Q6b.i_x == 3) ~ 'Other science',
+        Q6b.i_x == 4 ~ 'Other',
+        TRUE ~ 'Unknown'),
+        Gender = case_when(
+          (Q6e_3_y == 1) | (Q6e_7_y == 1) ~ 'Non-binary',
+          Q6e_2_y == 1 ~ 'Woman',
+          Q6e_1_y == 1 ~ 'Man',
+          (Q6e_3_x == 1) | (Q6e_7_x == 1) ~ 'Non-binary',
+          Q6e_2_x == 1 ~ 'Woman',
+          Q6e_1_x == 1 ~ 'Man',
+          TRUE ~ 'Unknown'
+        ),
+        Race.ethnicity.AmInd = 1 * ((Q6f_1_y == 1) | (Q6f_1_x == 1)),
+        Race.ethnicity.Asian = 1 * ((Q6f_2_y == 1) | (Q6f_2_x == 1)),
+        Race.ethnicity.Black = 1 * ((Q6f_3_y == 1) | (Q6f_3_x == 1)),
+        Race.ethnicity.Hispanic = 1 * ((Q6f_4_y == 1) | (Q6f_4_x == 1)),
+        Race.ethnicity.NatHawaii = 1 * ((Q6f_5_y == 1) | (Q6f_5_x == 1)),
+        Race.ethnicity.White = 1 * ((Q6f_6_y == 1) | (Q6f_6_x == 1)),
+        Race.ethnicity.Other = 1 * ((Q6f_7_y == 1) | (Q6f_7_x == 1)),
+        Race.ethnicity.unknown = 1 * ((Race.ethnicity.AmInd == 0) & 
+                                        (Race.ethnicity.Asian == 0) & 
+                                        (Race.ethnicity.Black == 0) & 
+                                        (Race.ethnicity.Hispanic == 0) & 
+                                        (Race.ethnicity.NatHawaii == 0) & 
+                                        (Race.ethnicity.White == 0) & 
+                                        (Race.ethnicity.Other == 0))) %>%
+      mutate(Major = relevel(as.factor(Major), ref = 'Physics'),
+             Gender = relevel(as.factor(Gender), ref = 'Man'))
+  } else {
+    df <- df %>%
+      mutate(Major = case_when(
+        (Q6b == 1) | (Q6b == 2) | (Q6b == 3) ~ 'Physics',
+        Q6b.i == 1 ~ 'Engineering',
+        (Q6b.i == 2) | (Q6b.i == 3) ~ 'Other science',
+        Q6b.i == 4 ~ 'Other',
+        TRUE ~ 'Unknown'),
+        Gender = case_when(
+          (Q6e_3 == 1) | (Q6e_7 == 1) ~ 'Non-binary',
+          Q6e_2 == 1 ~ 'Woman',
+          Q6e_1 == 1 ~ 'Man',
+          TRUE ~ 'Unknown'
+        ),
+        Race.ethnicity.AmInd = 1 * (Q6f_1 == 1),
+        Race.ethnicity.Asian = 1 * (Q6f_2 == 1),
+        Race.ethnicity.Black = 1 * (Q6f_3 == 1),
+        Race.ethnicity.Hispanic = 1 * (Q6f_4 == 1),
+        Race.ethnicity.NatHawaii = 1 * (Q6f_5 == 1),
+        Race.ethnicity.White = 1 * (Q6f_6 == 1),
+        Race.ethnicity.Other = 1 * (Q6f_7 == 1),
+        Race.ethnicity.unknown = 1 * ((Race.ethnicity.AmInd == 0) & 
+                                        (Race.ethnicity.Asian == 0) & 
+                                        (Race.ethnicity.Black == 0) & 
+                                        (Race.ethnicity.Hispanic == 0) & 
+                                        (Race.ethnicity.NatHawaii == 0) & 
+                                        (Race.ethnicity.White == 0) & 
+                                        (Race.ethnicity.Other == 0))) %>%
+      mutate(Major = relevel(as.factor(Major), ref = 'Physics'),
+             Gender = relevel(as.factor(Gender), ref = 'Man'))
+  }
   
   # df[is.na(df)] <- 0
   df[, names(df)[names(df) %like% "Race"]] <- 
