@@ -15,14 +15,26 @@ source('C:/Users/Cole/Documents/GitHub/PLIC/Processing-Scripts/PLIC_DataProcessi
 theme_set(theme_classic(base_size = 14))
 ```
 
-# Read and get institution/course/class breakdowns
+# Breakdown of dataset
+
+## Read and get institution/course/class breakdowns
 ```{r}
-full.df <- fread('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
-  filter(Survey_x == 'C' | Survey_y == 'C') # remove events with no CR surveys
+full.df <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
+  filter(Survey_x == 'C' | Survey_y == 'C') %>% # remove events with no CR surveys
+  # remove pre-pandemic data
+  mutate(V4_x = as.Date(V4_x),
+         V4_y = as.Date(V4_y)) %>%
+  filter(V4_y < as.Date('2020-01-01') | (is.na(V4_y) & 
+                                           V4_x < as.Date('2020-01-01')))
 
 # Remove FR scores
-full.df[full.df$Survey_x == 'F', 'PreScores'] <- NA_real_
-full.df[full.df$Survey_y == 'F', 'PostScores'] <- NA_real_
+full.df[(full.df$Survey_x == 'F') | is.na(full.df$Q3c_x), 'PreScores'] <- NA_real_
+full.df[(full.df$Survey_y == 'F') | is.na(full.df$Q3c_y), 'PostScores'] <- NA_real_
+full.df <- full.df %>%
+  filter(!is.na(PreScores) | !is.na(PostScores))
+
+full.df %>%
+  summarize(earliest = min(V4_x, na.rm = TRUE), latest = max(V4_y, na.rm = TRUE))
 
 print('Total # of students in dataset...')
 length(unique(full.df$anon_student_id))
@@ -42,7 +54,7 @@ table(full.df[!duplicated(full.df$anon_course_id),]$Lab_level, exclude = NULL)
 table(full.df[!duplicated(full.df$Class_ID),]$Lab_level, exclude = NULL)
 ```
 
-# Student demographics
+## Student demographics
 ```{r}
 full.df <- Collapse.vars(full.df) # Creates new gender/race/major columns
 # Get df of only unique students
@@ -60,7 +72,9 @@ print('# of students that took the PLIC in two or more classes...')
 length(unique(full.df[duplicated(full.df$anon_student_id), 'anon_student_id']))
 ```
 
-# Overall distribution
+# Statistical validation
+
+## Overall distribution
 ```{r}
 print('Number of pretests...')
 sum(!is.na(full.df$PreScores))
@@ -69,13 +83,14 @@ sum(!is.na(full.df$PostScores))
 
 ggplot(full.df[, c('PreScores', 'PostScores')] %>%
          `colnames<-`(c('PRE', 'POST')) %>%
-         melt(variable.name = 'Test', value.name = 'Score'), aes(x = Score, group = Test, 
+         melt(variable.name = 'Test', value.name = 'Score'), aes(x = Score, 
+                                                                 group = Test, 
                                                                  fill = Test)) +
   geom_density(alpha = 0.4) +
   scale_fill_manual(values = c('#d95f02', '#7570b3'))
 ```
 
-# Item difficulty
+## Item difficulty
 ```{r}
 # create long form data with average item scores (unmatched) with standard errors
 Question.stats <- function(df, test){
@@ -87,52 +102,61 @@ Question.stats <- function(df, test){
   df.q <- df.q %>%
   melt(variable.name = 'Item', value.name = 'Score') %>%
   group_by(Item) %>%
-  summarize(Average = mean(Score, na.rm = TRUE), SE = sd(Score, na.rm = TRUE)/sqrt(n()), 
+  summarize(Average = mean(Score, na.rm = TRUE), 
+            SE = sd(Score, na.rm = TRUE)/sqrt(n()), 
             N = n()) %>% # get summary statistics
   rowwise() %>%
   mutate(Item = substr(Item, 1, 3), # get rid of the suffix of the item names
          Test = test) # add test (i.e., pre/post) distinction
+  return(df.q)
 }
 
 df.q <- rbind(Question.stats(full.df, 'PRE'), Question.stats(full.df, 'POST')) %>%
+  data.frame(.) %>%
   mutate(Test = factor(Test, levels = c('PRE', 'POST')))
 
 min(df.q$Average)
 max(df.q$Average)
 
-ggplot(df.q, aes(x = Item, y = Average, group = Test, color = Test, shape = Test)) +
+ggplot(df.q, aes(x = Item, y = Average, group = Test, color = Test, 
+                 shape = Test)) +
   geom_point(size = 4) +
   scale_color_manual(values = c('#d95f02', '#7570b3')) +
   labs(y = 'Item difficulty')
 ```
 
-# Item discrimination
+## Item discrimination
 ```{r}
 compute.discrimination.correlation <- function(df, test, type = 'discrimination'){
   if(test != 'Both'){
       if(type == 'discrimination'){
         df$quartile <- as.integer(cut(df[, paste(test, 'Scores', sep = '')],
-                                      quantile(df[, paste(test, 'Scores', sep = '')],
-                                               na.rm = TRUE), include.lowest = TRUE)) 
+                                      quantile(df[, paste(test, 'Scores', 
+                                                          sep = '')], 
+                                               na.rm = TRUE), 
+                                      include.lowest = TRUE)) 
       }
       
       if(test == 'Pre'){
         if(type == 'correlation'){
-          return(cor(df[, c('PreScores', colnames(df)[colnames(df) %like% 's_x'])], 
+          return(cor(df[, c('PreScores', 
+                            colnames(df)[colnames(df) %like% 's_x'])],
                      use = 'complete.obs')[1,])
         }
         df.quartile <- df %>%
           select(quartile, colnames(df)[colnames(df) %like% 's_x'])
       } else {
         if(type == 'correlation'){
-          return(cor(df[, c('PostScores', colnames(df)[colnames(df) %like% 's_y'])], 
+          return(cor(df[, c('PostScores', 
+                            colnames(df)[colnames(df) %like% 's_y'])], 
                      use = 'complete.obs')[1,])
         }
           df.quartile <- df %>%
             select(quartile, colnames(df)[colnames(df) %like% 's_y']) 
       }
   } else {
-    Items <- c('Q1B', 'Q1D', 'Q1E', 'Q2B', 'Q2D', 'Q2E', 'Q3B', 'Q3D', 'Q3E', 'Q4B')
+    Items <- c('Q1B', 'Q1D', 'Q1E', 'Q2B', 'Q2D', 'Q2E', 'Q3B', 'Q3D', 'Q3E', 
+               'Q4B')
     
     df.quartile <- rbind(df[, c("PreScores", 
                                 colnames(df)[colnames(df) %like% 's_x'])] %>%
@@ -148,7 +172,8 @@ compute.discrimination.correlation <- function(df, test, type = 'discrimination'
     
     df.quartile$quartile <- as.integer(cut(df.quartile[, 'Score'], 
                                            quantile(df.quartile[, 'Score'], 
-                                                    na.rm = TRUE), include.lowest = TRUE))
+                                                    na.rm = TRUE), 
+                                           include.lowest = TRUE))
     df.quartile <- df.quartile %>%
       select(-Score)
   }
@@ -157,7 +182,8 @@ compute.discrimination.correlation <- function(df, test, type = 'discrimination'
     group_by(quartile) %>%
     summarize_all('mean')
   
-  D = df.quartile[df.quartile$quartile == 4, ] - df.quartile[df.quartile$quartile == 1, ]
+  D = df.quartile[df.quartile$quartile == 4, ] - 
+    df.quartile[df.quartile$quartile == 1, ]
       
   return(D[1, 2:ncol(D)])
   
@@ -168,14 +194,14 @@ compute.discrimination.correlation(full.df, 'Post')
 compute.discrimination.correlation(full.df, 'Both')
 ```
 
-# Item-test correlations
+## Item-test correlations
 ```{r}
 compute.discrimination.correlation(full.df, 'Pre', 'correlation')
 compute.discrimination.correlation(full.df, 'Post', 'correlation')
 compute.discrimination.correlation(full.df, 'Both', 'correlation')
 ```
 
-# Internal reliability
+## Internal reliability
 ```{r}
 Items <- c('Q1B', 'Q1D', 'Q1E', 'Q2B', 'Q2D', 'Q2E', 'Q3B', 'Q3D', 'Q3E', 'Q4B')
 fa.df <- rbind(full.df[, c("PreScores", 
@@ -209,18 +235,18 @@ CFA <- cfa(mod, fa.df[-inds, ], std.lv = TRUE, estimator = 'ML')
 summary(CFA, fit.measures = TRUE, modindices = TRUE, standardized = TRUE)
 resid(CFA)
 semPaths(CFA, what = 'diagram', whatLabels = 'stand', layout = 'tree2',
-         residuals = FALSE, nCharNodes = 10, edge.color = 'black', edge.label.cex = 1.5,
-         curve = 2, label.scale = FALSE,
-         nodeLabels = c('Q1B', 'Q2B', 'Q3B', 'Q3D', 'Q1D', 'Q2D', 'Q4B', 'Q1E', 'Q2E',
-                        'Q3E', 'Evaluate\nModels', 'Evaluate\nMethods',
-                        'Suggest\nFollow-ups'), rotation = 2, sizeMan = 7, sizeMan2 = 6,
-         sizeLat = 16, mar = c(1, 6, 1, 2))
+         residuals = FALSE, nCharNodes = 10, edge.color = 'black', 
+         edge.label.cex = 1.5, curve = 2, label.scale = FALSE,
+         nodeLabels = c('Q1B', 'Q2B', 'Q3B', 'Q3D', 'Q1D', 'Q2D', 'Q4B', 'Q1E', 
+                        'Q2E', 'Q3E', 'Evaluate\nModels', 'Evaluate\nMethods',
+                        'Suggest\nFollow-ups'), rotation = 2, sizeMan = 7, 
+         sizeMan2 = 6, sizeLat = 16, mar = c(1, 6, 1, 2))
 ```
 
-# Concurrent validity
+## Concurrent validity
 ```{r}
 full.df <- full.df %>%
-  mutate(Lab_level = factor(Lab_level, levels = c('HighSchool', 'Intro-Algebra',
+  mutate(Lab_level = factor(Lab_level, levels = c('Intro-Algebra',
                                                   'Intro-Calculus', 'Sophomore', 
                                                   'Junior',  'Senior')))
 
@@ -233,21 +259,23 @@ desc.tab
 p <- ggplot(full.df[!is.na(full.df$PreScores),], 
             aes(x = Lab_level, y = PreScores, group = Lab_level, color = Lab_level))
 add_summary(p, fun = 'mean_se', group = c('Lab_level')) +
-  scale_color_manual(values = c('#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', 
-                                '#e6ab02')) +
-  scale_x_discrete(labels = paste(c('High school', 'Intro (algebra)', 'Intro (calculus)', 
-                                    'Sophomore', 'Junior', 'Senior/graduate'), ' (N = ', 
-                                  desc.tab$N, ')', sep ='')) +
-  theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust = 1),
+  scale_color_manual(values = c('#1b9e77', '#d95f02', '#7570b3', '#e7298a', 
+                                '#66a61e')) +
+  scale_x_discrete(labels = paste(c('Intro (algebra)', 'Intro (calculus)', 
+                                    'Sophomore', 'Junior', 'Senior/graduate'), 
+                                  ' (N = ', desc.tab$N, ')', sep ='')) +
+  theme(axis.text.x = element_text(angle = 40, vjust = 1, hjust = 1),
         legend.position = "none") +
   labs(x = 'Course level', y = 'Average pretest score') +
-  geom_label(data = desc.tab, aes(y = Avg + se + 0.2, label = paste(round(Avg, 2), 
-                                                                    "\u00B1", round(se, 2))))
+  geom_label(data = desc.tab, aes(y = Avg + se + 0.2, 
+                                  label = paste(round(Avg, 2), "\u00B1", 
+                                                round(se, 2)))) +
+  scale_y_continuous(expand = c(0, .1))
 
 mod <- lm(PreScores ~ Lab_level, full.df[!is.na(full.df$PreScores),
                                                             ] %>%
               mutate(Lab_level = factor(Lab_level, 
-                                        levels = c('HighSchool', 'Intro-Algebra', 
+                                        levels = c('Intro-Algebra', 
                                                    'Intro-Calculus', 'Sophomore', 
                                                    'Junior', 'Senior'))))
 summary(mod)
@@ -259,7 +287,7 @@ anova(mod)
 ```{r}
 # This dataframe contains valid surveys from students who took the PLIC two or more times
 # at the same time (i.e., pre or post) for the same class
-student.trt.df <- read.csv('C:/Users/Cole/Documents/PLIC_DATA/Collective_Surveys/DuplicatedSurveys.csv')
+student.trt.df <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/DuplicatedSurveys.csv')
 
 print('# of students with more than one measurement')
 length(unique(student.trt.df$anon_student_id))
@@ -277,30 +305,36 @@ student.trt.df$V4 <- as.POSIXct(as.character(student.trt.df$V4),
 # times at two separate times, so I removed them for simplicity
 student.trt.df <- as.data.table(student.trt.df)[, N.measures := .N, 
                                              by = anon_student_id][N.measures == 2][,
-                                .(anon_student_id, TotalScores, V4, Q1Bs, Q1Ds, Q1Es, 
-                                  Q2Bs, Q2Ds, Q2Es, Q3Bs, Q3Ds, Q3Es, Q4Bs)]
+                                .(anon_student_id, TotalScores, V4, Q1Bs, Q1Ds,
+                                  Q1Es, Q2Bs, Q2Ds, Q2Es, Q3Bs, Q3Ds, Q3Es, Q4Bs)]
 
 print('# of students with more than one measurement')
 length(unique(student.trt.df$anon_student_id))
 
-print('Intraclass correlation: percent variance explained by group structure...')
-r2(lmer(TotalScores ~ (1 | anon_student_id), student.trt.df))
-
 # Convert data to wide form
 student.trt.matched <- inner_join(student.trt.df, student.trt.df,
-                                  by = 'anon_student_id', suffix = c('.x', '.y')) %>%
+                                  by = 'anon_student_id', 
+                                  suffix = c('.x', '.y')) %>%
   mutate(abs.diff = abs(TotalScores.y - TotalScores.x)) %>%
   filter((abs.diff != 0) & !duplicated(abs.diff)) %>%
   select(-abs.diff)
 
+student.trt.matched$Time.between <- student.trt.matched$V4.y - 
+  student.trt.matched$V4.x
+student.trt.matched <- student.trt.matched %>%
+  filter(Time.between < 14 * 24 * 60)
+
 print('# of pairs of measurements')
 nrow(student.trt.matched)
 
-student.trt.matched$Time.between <- student.trt.matched$V4.y - student.trt.matched$V4.x
 print('Time between measurements...')
 median(as.numeric(student.trt.matched$Time.between), na.rm = TRUE)/60
 min(as.numeric(student.trt.matched$Time.between), na.rm = TRUE)
 max(as.numeric(student.trt.matched$Time.between), na.rm = TRUE)/(60 * 24)
+
+print('Intraclass correlation: percent variance explained by group structure...')
+r2(lmer(TotalScores ~ (1 | anon_student_id), student.trt.df %>%
+          filter(anon_student_id %in% student.trt.matched$anon_student_id)))
 
 print('Correlation between two measurements...')
 cor.test(student.trt.matched$TotalScores.x, student.trt.matched$TotalScores.y)
