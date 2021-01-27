@@ -18,45 +18,61 @@ source('Calculate-MutInfo.R', local = TRUE)
 
 # Create dataframes for analyses
 ```{r}
-df_full <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv')
+full.df <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
+  filter(Survey_x == 'C' | Survey_y == 'C') %>% # remove events with no CR surveys
+  # remove pre-pandemic data
+  mutate(V4_x = as.Date(V4_x),
+         V4_y = as.Date(V4_y)) %>%
+  filter(V4_y < as.Date('2020-01-01') | (is.na(V4_y) & 
+                                           V4_x < as.Date('2020-01-01')))
+
+# Remove FR scores
+full.df[(full.df$Survey_x == 'F') | is.na(full.df$Q3c_x), 'PreScores'] <- NA_real_
+full.df[(full.df$Survey_y == 'F') | is.na(full.df$Q3c_y), 'PostScores'] <- NA_real_
+full.df <- full.df %>%
+  filter(!is.na(PreScores) | !is.na(PostScores))
+
+nrow(full.df)
 
 # identify columns corresponding to scores on a question and columns corresponding to 
 # 'other' response choices...we don't care about the 'other' response choices since this 
 # method evaluates utility of response choices and we have to keep the 'other' response 
 # choices regardless
-ScoresVec <- c('Q1Bs', 'Q1Ds', 'Q1Es', 'Q2Bs', 'Q2Ds', 'Q2Es', 'Q3Bs', 'Q3Ds', 'Q3Es', 
-                'Q4Bs')
-OthersVec <- c('Q1b_19', 'Q1d_10', 'Q1e_12', 'Q2b_38', 'Q2d_11', 'Q2e_11', 'Q3b_10', 
-                'Q3d_29', 'Q3e_8', 'Q4b_11')
+ScoresVec <- c('Q1Bs', 'Q1Ds', 'Q1Es', 'Q2Bs', 'Q2Ds', 'Q2Es', 'Q3Bs', 'Q3Ds', 
+               'Q3Es', 'Q4Bs')
+OthersVec <- c('Q1b_19', 'Q1d_10', 'Q1e_12', 'Q2b_38', 'Q2d_11', 'Q2e_11', 
+               'Q3b_10', 'Q3d_29', 'Q3e_8', 'Q4b_11')
 
 GetPrePostSurveys <- function(df, survey) {
   # retrieves response choices and scores on either the pre or post survey only
   if(survey == 'PRE') {
-    appendix <- 'x' # all presurvey columns have '_x' appended, postsurveys have '_y'
+    # all presurvey columns have '_x' appended, postsurveys have '_y'
+    appendix <- 'x'
     df.survey <- df %>%
-      # filter only closed response surveys where a presurvey total score exists...the
-      # Q3c filter is used to identify most recent versions of the survey where Q3c was 
-      # included
-      filter((Survey_x == 'C') & (!is.na(PreScores)) & (!is.na(Q3c_x))) 
+      # filter only closed response surveys where a presurvey total score 
+      # exists...the Q3c filter is used to identify most recent versions of the '
+      # survey where Q3c was included
+      filter(!is.na(PreScores)) 
   } else {
     appendix <- 'y'
     df.survey <- df %>%
-      filter((Survey_y == 'C') & (!is.na(PostScores)) & (!is.na(Q3c_y)))
+      filter(!is.na(PostScores))
   }
   
   df.survey <- df.survey %>%
-    select(c(grep(paste('((Q1b|Q1d|Q1e|Q2b|Q2d|Q2e|Q3b|Q3d|Q3e|Q4b)_[0-9]*)', appendix, 
-                        sep = '_'),
+    select(c(grep(paste('((Q1b|Q1d|Q1e|Q2b|Q2d|Q2e|Q3b|Q3d|Q3e|Q4b)_[0-9]*)', 
+                        appendix, sep = '_'),
                   names(.))), paste(ScoresVec, appendix, sep = '_')) %>%
     `colnames<-`(gsub(x = names(.), pattern = paste("\\", appendix, sep = '_'), 
                       replacement = "")) %>%
     select(-OthersVec)
 }
 
-df_Pre <- GetPrePostSurveys(df_full, 'PRE')
-df_Post <- GetPrePostSurveys(df_full, 'POST')
+df_Pre <- GetPrePostSurveys(full.df, 'PRE')
+df_Post <- GetPrePostSurveys(full.df, 'POST')
 
 df <- rbind(df_Pre, df_Post)
+print(nrow(df))
 
 char_vars <- lapply(df, class) == "character"
 df[, char_vars] <- lapply(df[, char_vars], as.factor)
@@ -75,21 +91,24 @@ PLIC.model.HYP <- ' models  =~ Q1Bs + Q2Bs + Q3Bs + Q3Ds
               methods =~ Q1Ds + Q2Ds + Q4Bs
               actions =~ Q1Es + Q2Es + Q3Es '
 
-mod.cfa.HYP <- cfa(PLIC.model.HYP, data = df_Questions, std.lv = TRUE, estimator = 'ML')
+mod.cfa.HYP <- cfa(PLIC.model.HYP, data = df_Questions, std.lv = TRUE, 
+                   estimator = 'ML')
 
 summary(mod.cfa.HYP, fit.measures = TRUE, modindices = FALSE, standardized = TRUE)
 resid(mod.cfa.HYP)
 cor(df_Questions)
 
 semPaths(mod.cfa.HYP, what = 'diagram', whatLabels = 'stand', layout = 'tree2', 
-         residuals = FALSE, nCharNodes = 10, edge.color = 'black', edge.label.cex = 2, 
-         curve = 2, label.scale = FALSE, nodeLabels = c('Q1B', 'Q2B', 'Q3B', 'Q3D', 
-                                                        'Q1D', 'Q2D', 'Q4B', 'Q1E', 
-                                                        'Q2E', 'Q3E', 'Evaluate\nModels', 
+         residuals = FALSE, nCharNodes = 10, edge.color = 'black', 
+         edge.label.cex = 2, 
+         curve = 2, label.scale = FALSE, nodeLabels = c('Q1B', 'Q2B', 'Q3B', 'Q3D',
+                                                        'Q1D', 'Q2D', 'Q4B', 'Q1E',
+                                                        'Q2E', 'Q3E', 
+                                                        'Evaluate\nModels', 
                                                         'Evaluate\nMethods', 
                                                         'Suggest\nFollow-ups'), 
-         rotation = 2, sizeMan = 8, sizeLat = 18, width = 4, height = 5, filetype = 'png',
-         filename = 'Figures/CFA', mar = c(1, 6, 1, 2))
+         rotation = 2, sizeMan = 8, sizeLat = 18, width = 4, height = 5, 
+         filetype = 'png', filename = 'Figures/CFA', mar = c(1, 6, 1, 2))
 ```
 
 # Calculate and discretize factor scores
@@ -123,17 +142,20 @@ Models.df <- df_Items[, grep('Q1b|Q2b|Q3b|Q3d', names(df_Items))]
 Models.MI.df <- MI.CI(Models.df, scores$models, reps = 100)
 
 # we highlight these specific response choices for reasons discussed in text
-labels.list <- c('Q2B_9', 'Q2B_21', 'Q3B_9', 'Q3B_21', 'Q2B_11', 'Q3B_11', 'Q2B_8', 'Q3B_23')
+labels.list <- c('Q2B_9', 'Q2B_21', 'Q3B_9', 'Q3B_21', 'Q2B_11', 'Q3B_11', 
+                 'Q2B_8', 'Q3B_23')
 
 png('Figures/MutInfo_Models.png')
-ggplot(Models.MI.df, aes(x = Prop.Sel, y = MI, color = Question, shape = Question)) +
+ggplot(Models.MI.df, aes(x = Prop.Sel, y = MI, color = Question, 
+                         shape = Question)) +
   geom_point(size = 3.5, alpha = 0.25) +
   geom_errorbar(aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 1, 
                 alpha = 0.25) +
   geom_point(data = Models.MI.df[Models.MI.df[, 'Item'] %in% labels.list,], 
              aes(x = Prop.Sel, y = MI, color = Question), size = 3.5) +
   geom_errorbar(data = Models.MI.df[Models.MI.df[, 'Item'] %in% labels.list,], 
-                aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 0.8, alpha = 1) +
+                aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 0.8, 
+                alpha = 1) +
   scale_shape_manual(values = c(15, 16, 17, 18)) +
   scale_color_manual(values = c("#0072b2", "#d55e00", "#009e73", "#009e73")) +
   scale_fill_manual(values = labels.list) +
@@ -156,20 +178,22 @@ Methods.MI.df <- MI.CI(Methods.df, scores$methods, reps = 100)
 labels.list <- c('Q1D_61', 'Q1D_63', 'Q2D_35', 'Q2D_4', 'Q1D_3', 'Q2D_33', 'Q4B_4')
 
 png('Figures/MutInfo_Methods.png')
-ggplot(Methods.MI.df, aes(x = Prop.Sel, y = MI, color = Question, shape = Question)) +
+ggplot(Methods.MI.df, aes(x = Prop.Sel, y = MI, color = Question, 
+                          shape = Question)) +
   geom_point(size = 3.5, alpha = 0.25) +
   geom_errorbar(aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 1, 
                 alpha = 0.25) +
   geom_point(data = Methods.MI.df[Methods.MI.df[, 'Item'] %in% labels.list,], 
              aes(x = Prop.Sel, y = MI, color = Question), size = 3.5) +
   geom_errorbar(data = Methods.MI.df[Methods.MI.df[, 'Item'] %in% labels.list,], 
-                aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 0.8, alpha = 1) +
+                aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 0.8, 
+                alpha = 1) +
   scale_shape_manual(values = c(15, 16, 17)) +
   scale_color_manual(values = c("#0072b2", "#d55e00", "#cc79a7")) +
   scale_fill_manual(values = labels.list) +
   geom_label_repel(data = subset(Methods.MI.df, Item %in% labels.list),
-            aes(x = Prop.Sel, y = MI, color = Question, label = Item), nudge_x = 0.02, 
-            nudge_y = 0.06, size = 6, show.legend = FALSE) +
+            aes(x = Prop.Sel, y = MI, color = Question, label = Item), 
+            nudge_x = 0.02, nudge_y = 0.06, size = 6, show.legend = FALSE) +
   theme_classic() +
   theme(text = element_text(size = 18)) +
   labs(x = 'Fraction of times selected', y = 'Mutual information (bits)')
@@ -182,24 +206,26 @@ Actions.df <- df_Items[, grep('Q1e|Q2e|Q3e', names(df_Items))]
 
 Actions.MI.df <- MI.CI(Actions.df, scores$actions, reps = 100)
 
-labels.list <- c('Q1E_1', 'Q1E_4', 'Q1E_13', 'Q2E_14', 'Q2E_6', 'Q3E_11', 'Q3E_13', 
-                 'Q3E_20')
+labels.list <- c('Q1E_1', 'Q1E_4', 'Q1E_13', 'Q2E_14', 'Q2E_6', 'Q3E_11', 
+                 'Q3E_13', 'Q3E_20')
 
 png('Figures/MutInfo_Actions.png')
-ggplot(Actions.MI.df, aes(x = Prop.Sel, y = MI, color = Question, shape = Question)) +
+ggplot(Actions.MI.df, aes(x = Prop.Sel, y = MI, color = Question, 
+                          shape = Question)) +
   geom_point(size = 3.5, alpha = 0.25) +
   geom_errorbar(aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 1, 
                 alpha = 0.25) +
   geom_point(data = Actions.MI.df[Actions.MI.df[, 'Item'] %in% labels.list,], 
              aes(x = Prop.Sel, y = MI, color = Question), size = 3.5) +
   geom_errorbar(data = Actions.MI.df[Actions.MI.df[, 'Item'] %in% labels.list,], 
-                aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 0.8, alpha = 1) +
+                aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 0.8, 
+                alpha = 1) +
   scale_shape_manual(values = c(15, 16, 17)) +
   scale_color_manual(values = c("#0072b2", "#d55e00", "#009e73")) +
   scale_fill_manual(values = labels.list) +
   geom_label_repel(data = subset(Actions.MI.df, Item %in% labels.list),
-            aes(x = Prop.Sel, y = MI, color = Question, label = Item), nudge_x = 0.04, 
-            nudge_y = 0.01, size = 6, show.legend = FALSE) +
+            aes(x = Prop.Sel, y = MI, color = Question, label = Item), 
+            nudge_x = 0.04, nudge_y = 0.01, size = 6, show.legend = FALSE) +
   theme_classic() +
   theme(text = element_text(size = 18)) +
   labs(x = 'Fraction of times selected', y = 'Mutual information (bits)')
@@ -214,8 +240,8 @@ ggplot(net.df, aes(x = Prop.Sel, y = MI, color = Question, shape = Question)) +
   geom_point(size = 3.5) +
   geom_errorbar(aes(ymin = CI.Low, ymax = CI.High), width = 0.01, size = 1) +
   scale_shape_manual(values = c(15, 16, 17, 15, 16, 17, 15, 15, 17, 16)) +
-  scale_color_manual(values = c(rep("#0072b2", 3), rep("#d55e00", 3), rep("#009e73", 3), 
-                                "#cc79a7")) #+
+  scale_color_manual(values = c(rep("#0072b2", 3), rep("#d55e00", 3),
+                                rep("#009e73", 3), "#cc79a7")) #+
   # scale_fill_manual(values = labels.list) +
   # geom_label_repel(data = subset(Actions.MI.df, Item %in% labels.list),
   #           aes(x = Prop.Sel, y = MI, color = Question, label = Item), nudge_x = 0.04, 
