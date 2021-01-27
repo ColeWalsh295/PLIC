@@ -29,10 +29,10 @@ def Individiual_Question_Network(df, Question, Survey = 'PRE'):
 
     if(Survey == 'PRE'):
         appendix = 'x'
-        df1 = df[df['Survey_x'] == 'C'] # get only closed-response surveys
+        df1 = df.dropna(subset = ['PreScores']) # get only closed-response surveys
     else:
         appendix = 'y'
-        df1 = df[df['Survey_y'] == 'C']
+        df1 = df.dropna(subset = ['PostScores'])
     ID = 'V1_' + appendix
 
     # get items belonginging to specified question
@@ -113,22 +113,22 @@ def FindCommunities(df, Survey = 'ALL', Matched = False, Projection = 'Item', re
     if(Survey == 'PRE'):
         appendix = '_x'
         if Matched:
-            df1 = df[(df['Survey_x'] == 'C') & (df['Survey_y'] == 'C')]
+            df1 = df.dropna(subset = ['PreScores', 'PostScores'], how = 'any')
         else:
-            df1 = df[df['Survey_x'] == 'C']
+            df1 = df.dropna(subset = ['PreScores'])
     elif(Survey == 'POST'):
         appendix = '_y'
         if Matched:
-            df1 = df[(df['Survey_x'] == 'C') & (df['Survey_y'] == 'C')]
+            df1 = df.dropna(subset = ['PreScores', 'PostScores'], how = 'any')
         else:
-            df1 = df[df['Survey_y'] == 'C']
+            df1 = df.dropna(subset = ['PostScores'])
     else:
         appendix = ''
         if Matched:
-            df1 = df[(df['Survey_x'] == 'C') & (df['Survey_y'] == 'C')]
+            df1 = df.dropna(subset = ['PreScores', 'PostScores'], how = 'any')
         else:
-            df1 = df[df['Survey_x'] == 'C']
-            df2 = df[df['Survey_y'] == 'C']
+            df1 = df.dropna(subset = ['PreScores'])
+            df2 = df.dropna(subset = ['PostScores'])
     ID = 'V1' + appendix
 
     Questions = ['Q1b', 'Q1d', 'Q1e', 'Q2b', 'Q2d', 'Q2e', 'Q3b', 'Q3d', 'Q3e', 'Q4b']
@@ -369,6 +369,8 @@ def SankeyItemTrees(Com_dfs = [], Labels = [], Projection = 'Item'):
     Target = []
     Value = []
 
+    for df in Com_dfs:
+        df['Item'] = df.index
     for i, df in enumerate(Com_dfs):
         if(i == len(Com_dfs) - 1):
             break
@@ -389,7 +391,7 @@ def SankeyItemTrees(Com_dfs = [], Labels = [], Projection = 'Item'):
             color = "black",
             width = 0.5
           ),
-          label = [Labels[i] + '_' + str(c) for i in range(len(Com_dfs)) for c in range(Com_dfs[i].loc[:, 'Community'].max() - Com_dfs[i].loc[:, 'Community'].min()  + 1)],
+          label = [Labels[i] + str(c) for i in range(len(Com_dfs)) for c in range(Com_dfs[i].loc[:, 'Community'].max() - Com_dfs[i].loc[:, 'Community'].min()  + 1)],
           color = [Colors[i] for i in range(len(Com_dfs)) for c in range(Com_dfs[i].loc[:, 'Community'].max() - Com_dfs[i].loc[:, 'Community'].min() + 1)]
         ),
         link = dict(
@@ -399,9 +401,9 @@ def SankeyItemTrees(Com_dfs = [], Labels = [], Projection = 'Item'):
       ))
 
     layout =  dict(
-        title = "Item-Community Shifts",
+        title = "Response choice community Shifts",
         font = dict(
-          size = 10
+          size = 20
         )
     )
 
