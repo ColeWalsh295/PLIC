@@ -11,7 +11,9 @@ library(tidyverse)
 library(DescTools)
 library(ggthemes)
 library(lmerTest)
-theme_set(theme_fivethirtyeight())
+library(MRCV)
+source('C:/Users/Cole/Documents/GitHub/PLIC/Processing-Scripts/PLIC_DataProcessing.R')
+theme_set(theme_classic(base_size = 12))
 ```
 
 # Load data and extract classes with both CR and OR
@@ -21,6 +23,7 @@ theme_set(theme_fivethirtyeight())
 files = list.files("C:/Users/Cole/Documents/DATA/PLIC_DATA/Raw_Surveys/BC (Before Cole)/", 
                    recursive = TRUE, full.names = TRUE)
 
+# UBC119 accidentally did not receive PR version; Maine post saw both OR and CR
 files <- files[!grepl('*(UBC119|MAINE)_RAW_POST*', files)]
 
 read.old.file <- function(file){
@@ -42,18 +45,20 @@ df.old = ldply(files, read.old.file)
 ## New data
 ```{r}
 df.new.post <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/POST_Valid/POST_Valid_Concat.csv') %>%
-  select(Survey, Q4a, Class_ID)
+  mutate(V4 = as.Date(V4)) %>%
+  filter(V4 < as.Date('2018-01-01'))
 Class_IDs <- unique(df.new.post[df.new.post$Survey == 'F', 'Class_ID'])
 df.new.post <- subset(df.new.post, df.new.post$Class_ID %in% Class_IDs) %>%
   mutate(Class_ID = paste(Class_ID, 'post', sep = '.'))
 
 df.new.pre <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/PRE_Valid/PRE_Valid_Concat.csv') %>%
-  select(Survey, Q4a, Class_ID)
+  mutate(V4 = as.Date(V4)) %>%
+  filter(V4 < as.Date('2018-01-01'))
 Class_IDs <- unique(df.new.pre[df.new.pre$Survey == 'F', 'Class_ID'])
 df.new.pre <- subset(df.new.pre, df.new.pre$Class_ID %in% Class_IDs) %>%
   mutate(Class_ID = paste(Class_ID, 'pre', sep = '.'))
 
-df <- rbind(df.old, df.new.post, df.new.pre) %>%
+df.new <- rbind(df.new.pre, df.new.post) %>%
   mutate(Group = as.factor(case_when(
     Q4a == '1' ~ '1',
     Q4a == '2' ~ '2',
@@ -61,56 +66,107 @@ df <- rbind(df.old, df.new.post, df.new.pre) %>%
     TRUE ~ ''
   ))) %>%
   filter(Group != '' & Survey != '') %>%
-  select(Survey, Group, Class_ID)
+  Collapse.vars(., matched = FALSE)
 ```
 
 # Analysis
 
-## Overall differences
+## Check validity
+```{r, warning = FALSE, message = FALSE}
+table(df.new$Survey)
+length(unique(df.new$Class_ID))
+chisq.test(df.new$Q6a, df.new$Survey)
+chisq.test(df.new$Major, df.new$Survey)
+chisq.test(df.new$Gender, df.new$Survey)
 
+set.seed(11)
+df.race <- df.new[, c('Survey', 
+                      names(df.new)[names(df.new) %like% 'Race.ethnicity'])]
+df.race[is.na(df.race)] <- 0
+MI.test(df.race[, 1:(ncol(df.race) - 1)], I = 1, J = ncol(df.race) - 2, B = 1000, 
+        print.status = FALSE)
+```
+## Differences by condition
+
+### Which group did it better?
 ```{r}
-df %>%
-  group_by(Survey, Group) %>%
-  summarize(N = n()) %>%
-  mutate(freq = N / sum(N))
+ggplot(df.new, aes(x = Group, fill = Survey, group = Survey)) +
+  geom_bar(position = 'dodge', aes(y = ..prop..)) +
+  labs(fill = 'Condition', x = 'Selection', y = 'Fraction of respondents') +
+  scale_fill_discrete(labels = c('Closed-response', 'Open-response')) +
+  scale_x_discrete(labels = c('Group 1', 'Group 2', 'Both the same'))
 
-chisq.test(df$Survey, df$Group)
+chisq.test(df.new$Group, df.new$Survey)
 ```
 
-
-## Multilevel models
-
-We fit separate Multilevel logit models because pacakges for multinomial models can't handle random effects and packages for mixed effects can't handle multinomial responses. I also ran a chi-squared test to check with accounting for nesting.
-
+### What next? questions
 ```{r}
-summary(glmer(Group ~ Survey + (1 | Class_ID), df %>%
-                filter(Group != 'B'), family = binomial(link = 'logit')))
+df.next <- df.new[, grepl('(Q(1e|2e|3e)_(\\d+)$|Survey)', names(df.new))] %>%
+  mutate(id = row.names(.)) %>% # need an ID column to convert back to wide
+  melt(., id.vars = c('id', 'Survey'), 
+       variable.name = 'Response_choice') %>%
+  # combine 'next' questions from Likert and None conditions into single variable
+  mutate(value = ifelse(is.na(value), 0, 1)) %>% 
+  rowwise() %>%
+  mutate(Item = strsplit(as.character(Response_choice), '_')[[1]][1],
+         RC_code = strsplit(as.character(Response_choice), '_')[[1]][2]) %>%
+  mutate(Page = case_when(
+    Item == 'Q1e' ~ 'Group 1',
+    Item == 'Q2e' ~ 'Group 2',
+    TRUE ~ 'Group 2 (cont.)'
+  )) %>%
+  filter(!(Response_choice %in% c('Q1e_34', 'Q2e_34', 'Q2e_38', 'Q3e_22', 
+                                  'Q3e_36', 'Q3e_37', 'Q3e_49')))
 
-summary(glmer(Group ~ Survey + (1 | Class_ID), df %>%
-                filter(Group != '2'), family = binomial(link = 'logit')))
+N.RCs <- unique(df.next %>%
+                  select(Item, RC_code)) %>%
+  group_by(Item) %>%
+  summarize(N = n())
 
-summary(glmer(Group ~ Survey + (1 | Class_ID), df %>%
-                filter(Group != '1'), family = binomial(link = 'logit')))
+set.seed(11)
+for(Q in c('Q1e', 'Q2e', 'Q3e')){
+  N.students.vec <- c(rep(1136, N.RCs[N.RCs$Item == Q, 'N'] %>%
+                            pull()), rep(372, N.RCs[N.RCs$Item == Q, 'N'] %>%
+                                           pull()))
+  
+  png(filename = paste('C:/Users/Cole/Documents/Dissertation/OR_analysis/', Q, 
+                       '_OR-condition.png', sep = ''))
+  p <- ggplot(df.next %>%
+                filter((value == 1) & (Item == Q)), aes(x = Response_choice, 
+                                                        fill = Survey,
+                                                        group = Survey)) +
+    geom_bar(position = 'dodge', aes(y = (..count..)/N.students.vec)) +
+    labs(fill = 'Condition', x = 'Response choice', 
+         y = 'Fraction of respondents') +
+    scale_fill_discrete(labels = c('Closed-response', 'Open-response')) +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1), 
+          legend.position = 'none')
+  print(p)
+  dev.off()
+  
+  print(MI.test(dcast(df.next %>%
+                        filter(Item == Q), formula = id + Survey ~ Response_choice,
+                      fun.aggregate = sum, value.var = "value") %>%
+                  select(-id), I = 1, 
+                J = length(unique(df.next %>%
+                                    filter(Item == Q) %>%
+                                    select(Response_choice) %>%
+                                    pull())), B = 1000, print.status = FALSE))
+}
 ```
 
-## What was the frequency in our non-controlled dataset?
+### Number of selections by condition
 ```{r}
-df.new.pre <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/PRE_Valid/PRE_Valid_Concat.csv') %>%
-  select(Survey, Q4a, Class_ID) %>%
-  filter(Survey == 'C' & !is.na(Q4a))
-
-df.new.pre %>%
-  group_by(Q4a) %>%
-  summarize(N = n()) %>%
-  mutate(freq = N / sum(N))
-
-df.new.post <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/POST_Valid/POST_Valid_Concat.csv') %>%
-  select(Survey, Q4a, Class_ID) %>%
-  filter(Survey == 'C' & !is.na(Q4a))
-
-df.new.post %>%
-  group_by(Q4a) %>%
-  summarize(N = n()) %>%
-  mutate(freq = N / sum(N))
+for(Q in c('Q1b', 'Q1d', 'Q1e', 'Q2b', 'Q2d', 'Q2e', 'Q3b', 'Q3d', 'Q3e', 'Q4b')){
+  df.Q <- df.new[, grepl(paste('(', Q, '_(\\d+)$|Survey)', sep = ''),
+                         names(df.new))]
+  df.N.responses <- data.frame(cbind(df.Q$Survey, 
+                                     rowSums(df.Q[, 1:(ncol(df.Q) - 1)], 
+                                             na.rm = TRUE)))
+  names(df.N.responses) <- c('Survey', 'N') 
+  print(df.N.responses %>%
+          mutate(N = as.numeric(N)) %>%
+          group_by(Survey) %>%
+          summarize(Avg = mean(N), Std.dev = sd(N)))
+}
 ```
-

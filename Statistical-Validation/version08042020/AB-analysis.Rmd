@@ -17,11 +17,12 @@ library(reshape2)
 library(ggstatsplot)
 library(MRCV)
 library(DescTools)
-theme_set(theme_fivethirtyeight())
+source('C:/Users/Cole/Documents/GitHub/PLIC/Processing-Scripts/PLIC_DataProcessing.R')
+theme_set(theme_classic(base_size = 12))
 ```
 
 ## Load and combine students' responses
-```{r, echo = FALSE}
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
 files = list.files("C:/Users/Cole/Documents/DATA/PLIC_DATA/SurveysNovember2020/", 
                    recursive = TRUE, full.names = TRUE)
 
@@ -34,6 +35,22 @@ df.students <- df.students[df.students[, 'Unnamed: 7'] == 1,]
 
 info <- data.frame(lapply(read.csv(files[1], nrows = 1), 
                           FUN = function(x) gsub("^.*- ", "", x)))
+
+df.students <- Collapse.vars(df.students, matched = FALSE)
+
+table(df.students$Condition)
+length(files)
+chisq.test(df.students$Q6a, df.students$Condition)
+chisq.test(df.students$Major, df.students$Condition)
+chisq.test(df.students$Gender, df.students$Condition)
+
+set.seed(11)
+df.race <- df.students[, c('Condition', 
+                           names(df.students)[names(df.students) %like% 
+                                                'Race.ethnicity'])]
+df.race[is.na(df.race)] <- 0
+MI.test(df.race[, 1:(ncol(df.race) - 1)], I = 1, J = ncol(df.race) - 2, B = 1000, 
+        print.status = FALSE)
 ```
 
 # Analysis
@@ -43,8 +60,6 @@ info <- data.frame(lapply(read.csv(files[1], nrows = 1),
 # 4 conditions, 2x2; Likert means the student received Likert items on the first
 # three pages, None means they did not. 1/2 refers to which group the student saw 
 # first
-table(df.students$Condition)
-
 Questions <- c('Q4a', 'Q152_1',	'Q152_2', 'Q152_3',	'Q152_4', 'Q153_1', 'Q153_2', 'Q153_3', 'Q154_1', 'Q154_2', 'Q154_3', 'Q154_4', 'Q148')
 
 # need to recode questions, throughout Group 1 is synonymous with Team Panda and
@@ -55,14 +70,24 @@ df.students <- recode2(df.students, vars = 'Q148',
                        recodes = "'1' = 'Methods'; '2' = 'Amt. of data'; 
                        'B' = 'Analysis'; 'N' = 'Other'")
 
+df.students[, 'Q4a'] <- as.factor(df.students[, 'Q4a'])
+ggplot(filter(df.students, !is.na(Q4a)), aes(x = Q4a, fill = Condition, 
+                                             group = Condition)) +
+    geom_bar(position = 'dodge', aes(y = ..prop..)) +
+    labs(fill = 'Condition', x = 'Selection', y = 'Fraction of respondents') +
+    scale_fill_discrete(labels = c('V1.S', 'V2.S', 'V1.N', 'V2.N')) +
+    scale_x_discrete(labels = c('Group 1', 'Group 2', 
+                                'Both were\nhighly effective', 
+                                'Both were\nminimally effective'))
+
 for(Q in Questions){
   df.students[, Q] <- as.factor(df.students[, Q])
-  p <- ggplot(df.students, aes_string(x = 'Condition', fill = Q, 
-                               group = Q)) +
-    geom_bar(position = 'dodge') +
-    labs(title = info[, Q]) +
-    theme(plot.title = element_text(size = 12))
-  
+  p <- ggplot(df.students, aes_string(x = Q, fill = 'Condition', 
+                               group = 'Condition')) +
+    geom_bar(position = 'dodge', aes(y = ..prop..)) +
+    labs(fill = 'Condition', x = 'Selection', y = 'Fraction of respondents') #+
+    scale_fill_discrete(labels = c('V1.S', 'V2.S', 'V1.N', 'V2.N')) #+
+    #scale_x_discrete(labels = c('Group 1', 'Group 2', 'Both the same'))
   print(info[, Q])
   print(p)
   print(chisq.test(df.students$Condition, df.students[, Q]))
@@ -82,15 +107,18 @@ For Q4a, more students look to pick Group 1 and less pick Group 2 when shown Gro
 # than 'Neither' increasing precision
 df.students$Q4a <- relevel(df.students$Q4a, ref = 'B')
 model <- multinom(Q4a ~ Likert + G2.First, df.students)
-
+summary(model)
 ggcoefstats(model, output = 'tidy') %>%
   filter(!grepl('Intercept', term)) %>% # we don't care about the intercepts
   mutate(term = gsub('G2.First', 'Group 2 first', term),
-         term = gsub('_N', ' (N/B)', term),
-         term = gsub('_2', ' (2/B)', term),
-         term = gsub('_1', ' (1/B)', term)) %>%
+         term = gsub('Likert', 'Scaffolding', term),
+         term = gsub('_N', ' (Neither group/Both groups)', term),
+         term = gsub('_2', ' (Group 2/Both groups)', term),
+         term = gsub('_1', ' (Group 1/Both groups)', term)) %>%
   arrange(desc(term)) %>%
-  ggcoefstats(., title = 'Which group did a better job? (Log odds ratios)')
+  ggcoefstats(.) +
+  labs(x = 'Estimated change in log odds', y = 'Effect', 
+       title = 'Which group did a better job?')
 
 dummy.df <- data.frame(Likert = c(0, 1, 0, 1), G2.First = c(0, 0, 1, 1))
 cbind(dummy.df, predict(model, type = 'probs', newdata = dummy.df)) %>%
@@ -266,35 +294,57 @@ df.next <- df.students[,
                              names(df.students))] %>%
   mutate(id = row.names(.)) %>% # need an ID column to convert back to wide
   melt(., id.vars = c('id', 'Condition', 'Likert', 'G2.First'), 
-       variable.name = 'Item') %>%
+       variable.name = 'Response_choice') %>%
   # combine 'next' questions from Likert and None conditions into single variable
   mutate(value = ifelse(is.na(value), 0, 1),
-         Item = str_replace(Item, '336', '134'),
-         Item = str_replace(Item, '348', '2e')) %>% 
+         Response_choice = str_replace(Response_choice, '336', '134'),
+         Response_choice = str_replace(Response_choice, '348', '2e'),
+         Response_choice = gsub('134', '1e', Response_choice),
+         Response_choice = gsub('147', '3e', Response_choice)) %>% 
   rowwise() %>%
-  mutate(Question = strsplit(as.character(Item), '_')[[1]][1],
-         Item = strsplit(as.character(Item), '_')[[1]][2]) %>%
-  mutate(Question = case_when(
-    Question == 'Q134' ~ 'Group 1',
-    Question == 'Q2e' ~ 'Group 2',
+  mutate(Item = strsplit(as.character(Response_choice), '_')[[1]][1],
+         RC_code = strsplit(as.character(Response_choice), '_')[[1]][2]) %>%
+  mutate(Page = case_when(
+    Item == 'Q1e' ~ 'Group 1',
+    Item == 'Q2e' ~ 'Group 2',
     TRUE ~ 'Group 2 (cont.)'
-  ))
+  )) %>%
+  filter(!(Response_choice %in% c('Q1e_7')))
+
+N.RCs <- unique(df.next %>%
+                  select(Item, RC_code)) %>%
+  group_by(Item) %>%
+  summarize(N = n())
 
 set.seed(11) # for consistency
-for(Q in c('Group 1', 'Group 2', 'Group 2 (cont.)')){
+for(Q in c('Q1e', 'Q2e', 'Q3e')){
   df.dummy <- df.next %>%
-    filter(Question == Q)
+    filter(Item == Q)
   
+  N.students.vec <- c(rep(150, N.RCs[N.RCs$Item == Q, 'N'] %>%
+                            pull()), rep(137, N.RCs[N.RCs$Item == Q, 'N'] %>%
+                                           pull()), 
+                      rep(150, N.RCs[N.RCs$Item == Q, 'N'] %>%
+                            pull()), rep(137, N.RCs[N.RCs$Item == Q, 'N'] %>%
+                                           pull()))
+  
+  png(filename = paste('C:/Users/Cole/Documents/Dissertation/AB_analysis/', Q, 
+                       '_AB-condition.png', sep = ''))
   p <- ggplot(df.dummy %>%
                 filter(value == 1), 
-              aes(x = Item, fill = Condition)) +
-    geom_bar(position = 'dodge') +
-    labs(title = paste('What to do next?', Q))
+              aes(x = Response_choice, fill = Condition, group = Condition)) +
+    geom_bar(position = 'dodge', aes(y = (..count..)/N.students.vec)) +
+    labs(fill = 'Condition', x = 'Response choice', 
+         y = 'Fraction of respondents') +
+    scale_fill_discrete(labels = c('V1.S', 'V2.S', 'V1.N', 'V2.N')) +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1), 
+          legend.position = 'none')
   print(p)
+  dev.off()
   
-  if(Q == 'Group 1'){ # pull info for specific set of questions
+  if(Q == 'Q1e'){ # pull info for specific set of questions
     info.temp <- info[, names(info)[names(info) %like% 'Q134_(\\d+)$']]
-  } else if(Q == 'Group 2'){
+  } else if(Q == 'Q2e'){
     info.temp <- info[, names(info)[names(info) %like% 'Q2e_(\\d+)$']]
   } else{
     info.temp <- info[, names(info)[names(info) %like% 'Q147_(\\d+)$']]
@@ -304,12 +354,27 @@ for(Q in c('Group 1', 'Group 2', 'Group 2 (cont.)')){
   print(data.frame(t(info.temp)))
   
   # need to convert dataset for question back to wide form to use with MI.test
-  print(MI.test(dcast(df.dummy, formula = id + Condition ~ Item,
+  print(MI.test(dcast(df.dummy, formula = id + Condition ~ Response_choice,
                       fun.aggregate = sum, value.var = "value") %>%
                   select(-id), I = 1, 
-          J = length(unique(df.dummy$Item)), B = 2000, print.status = FALSE))
+          J = length(unique(df.dummy$Response_choice)), B = 1000, 
+          print.status = FALSE))
 }
 ```
 MI.test uses three methods for conducting chi-squared tests of independence with multiple response categorical variables (MRCV), which violate regular chi-squared test assumptions of mutual exclusivity. All three methods produced similar p-values for each of the three methods questions (Group 1: p = (0.10, 0.16), Group 2: p = (0.004, 0.011), Group 2, cont: p = (<0.0005, 0.007)), suggesting that we can't say there are any differences in how students respond to Group 1's "what's next?" questions regardless of condition. For Group 2 and Group 2 (cont.), we can make this conclusion, but looking at the individual item chi-squared values and the plots, the differences in distributions are driven by one item in both cases: 34 -- "Repeat the experiment with more and different masses" and, again, is mainly affected by the ordering of the groups. In both conditions where students saw Group 2 first, they were more likely to say that the group should test more masses, which makes sense. When students see Group 1 first, then Group 2, the number of masses tested by Group 2 doesn't sound so bad.
 
 Overall, just looking at the plots, the group ordering effect is more pronounced than the effect of the Likert items. Effects of group ordering would look like ||_||_ or _||_|| (e.g., up/down/up/down), whereas effects of Likert items would look like |||__ or __||| (e.g., up/up/down/down).
+
+### Analysis of Q2e_34 and Q3e_34
+```{r}
+df.next %>%
+  filter((value == 1) & (Response_choice %in% c('Q2e_34', 'Q3e_34'))) %>%
+  group_by(G2.First, Response_choice) %>%
+  summarize(N = n())
+
+df.next %>%
+  filter((value == 1) & (Response_choice %in% c('Q2e_34', 'Q3e_34'))) %>%
+  group_by(Likert, Response_choice) %>%
+  summarize(N = n()/287)
+```
+
