@@ -7,7 +7,7 @@ os.chdir('C:/Users/Cole/Documents/GitHub/PLIC/Automation-Files/')
 import Valid_Matched
 import Scoring
 
-def BuildDuplicatedDataset(dir = 'C:/Users/Cole/Documents/PLIC_DATA/'):
+def BuildDuplicatedDataset(dir = 'C:/Users/Cole/Documents/DATA/PLIC_DATA/'):
     """Create dataframe of students who completed the PLIC multiple times (validly) in the same semester at the same timepoint.
 
     Keyword arguments:
@@ -26,7 +26,7 @@ def BuildDuplicatedDataset(dir = 'C:/Users/Cole/Documents/PLIC_DATA/'):
         df = pd.read_csv(f, skiprows = [1]).dropna(subset = ['Q5b', 'Q5c'])
         df = Valid_Matched.Validate(df, 'PRE')
         if 'Survey' in df.columns:
-            df = df.loc[df['Survey'] != 'F']
+            df = df.loc[df['Survey'] != 'F'].dropna(subset = ['Q3c'])
         if df.empty:
             continue
         df['Q5b'] = df['Q5b'].apply(str).str.lower().str.replace('\W', '')
