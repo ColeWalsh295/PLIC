@@ -15,16 +15,21 @@ source('C:/Users/Cole/Documents/GitHub/PLIC/Processing-Scripts/PLIC_DataProcessi
 
 # Read and match
 ```{r}
-full.df <- fread('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
-  filter(Survey_x == 'C' | Survey_y == 'C') %>%
+full.df <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
+  filter(Survey_x == 'C' | Survey_y == 'C') %>% # remove events with no CR surveys
+  # remove pre-pandemic data
   mutate(V4_x = as.Date(V4_x),
          V4_y = as.Date(V4_y)) %>%
   filter(V4_y < as.Date('2020-01-01') | (is.na(V4_y) & 
                                            V4_x < as.Date('2020-01-01')))
 
 # Remove FR scores
-full.df[full.df$Survey_x == 'F', 'PreScores'] <- NA_real_
-full.df[full.df$Survey_y == 'F', 'PostScores'] <- NA_real_
+#full.df[(full.df$Survey_x == 'F') | is.na(full.df$Q3c_x), 'PreScores'] <- NA_real_
+#full.df[(full.df$Survey_y == 'F') | is.na(full.df$Q3c_y), 'PostScores'] <- NA_real_
+full.df[(full.df$Survey_x == 'F'), 'PreScores'] <- NA_real_
+full.df[(full.df$Survey_y == 'F'), 'PostScores'] <- NA_real_
+full.df <- full.df %>%
+  filter(!is.na(PreScores) | !is.na(PostScores))
 
 print('Total # of students in dataset...')
 length(unique(full.df$anon_student_id))
@@ -109,11 +114,13 @@ df.matched <- Collapse.vars(data.frame(df.matched)) %>%
     Lab_purpose == 'Both about equally' ~ 'Mixed',
     Lab_purpose == 'Develop lab skills' ~ 'Skills-based')), 
     ref = 'Concepts-based'))
-df.matched[is.na(df.matched)] <- 0
 ```
 
 # Demographic breakdowns
 ```{r}
+df.matched[, colnames(df.matched) %like% 
+             'Race.ethnicity'][is.na(df.matched[, colnames(df.matched) 
+                                                %like% 'Race.ethnicity'])] <- 0
 table(df.matched$Gender)
 Race.ethnicity.table(df.matched, normalize = FALSE)
 table(df.matched$Major)
@@ -339,22 +346,22 @@ mod.agency <- '
   level: 1
     PostScores ~ PreScores
   level: 2
-    agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q28_1
+    agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q28_3 + Q31_6
 
     agency ~ Lab.goal.skills + Lab.goal.both
 
     PostScores ~ agency + Lab.goal.skills + Lab.goal.both
 '
 
-mod.analysis <- '
+mod.modeling <- '
   level: 1
     PostScores ~ PreScores
   level: 2
-    analysis =~ Q32_1 + Q32_2
+    modeling =~ Q31_1 + Q31_2 + Q31_3 + Q31_4
 
-    analysis ~ Lab.goal.skills + Lab.goal.both
+    modeling ~ Lab.goal.skills + Lab.goal.both
 
-    PostScores ~ analysis + Lab.goal.skills + Lab.goal.both
+    PostScores ~ modeling + Lab.goal.skills + Lab.goal.both
 '
 
 mod.communication <- '
@@ -374,7 +381,7 @@ summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
 standardizedsolution(fit)
 resid(fit, type = 'cor')
 
-fit <- sem(mod.analysis, data = df.matched, cluster = "Class_ID")
+fit <- sem(mod.modeling, data = df.matched, cluster = "Class_ID")
 summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
 standardizedsolution(fit)
 resid(fit, type = 'cor')
@@ -384,65 +391,3 @@ summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
 standardizedsolution(fit)
 resid(fit, type = 'cor')
 ```
-
-```{r}
-df.FY[, names(df.FY) %like% "Class_ID|Q33|PreScores|PostScores"] %>%
-  group_by(Class_ID, Q33_1, Q33_2, Q33_3, Q33_4) %>%
-  summarize(avg.pre = mean(PreScores), avg.post = mean(PostScores), N = n()) %>%
-  mutate(com = 1 * Q33_1 + 1.069 * Q33_2 + 1.935 * Q33_3 + 0.509 * Q33_4,
-         avg.gain = avg.post - avg.pre) %>%
-  arrange(desc(com)) %>%
-  ungroup() %>%
-  select(-c('Q33_2', 'Q33_3', 'Q33_4')) %>%
-  ggplot(., aes(x = com, y = avg.gain)) +
-  geom_point()
-```
-
-
-```{r}
-df.FY <- unique(df.FY[, names(df.FY)[names(df.matched) %like% 
-                              "Q28|Q29|Q31|Q32|Q33|Lab_purpose|Lab.goal.skills"]])
-
-df.FY <- df.FY %>%
-  filter(Lab_purpose != 'Mixed') %>%
-  select(-Lab_purpose)
-
-cor(df.FY)
-```
-
-
-```{r}
-mod.sem <- '
-  level: 1
-    PostScores ~ PreScores
-  level: 2
-    agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q28_1
-    analysis =~ Q32_1 + Q32_2
-    #communication =~ Q33_1 + Q33_2 + Q33_3 + Q33_4
-    # modeling =~ Q36_1 + Q36_2 + Q36_3 + Q36_4 + Q36_5 + Q36_6 + Q36_7
-    #agency ~~ analysis + communication
-    #analysis ~~ communication
-
-    agency ~ Lab.goal.skills + Lab.goal.both
-    #analysis ~ Lab.goal.skills + Lab.goal.both
-    #communication ~ Lab.goal.skills + Lab.goal.both
-    # modeling ~ Lab.goal.skills + Lab.goal.both
-
-    PostScores ~ agency + Lab.goal.skills + Lab.goal.both
-'
-df.BFY <- df.BFY %>%
-  filter(Lab_purpose != 'Mixed') %>%
-  select(-Lab_purpose)
-
-fit <- sem(mod.sem, data = df.BFY, cluster = "Class_ID")
-summary(fit, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
-standardizedsolution(fit)
-resid(fit, type = 'cor')
-```
-
-
-# Check null model
-```{r}
-nullRMSEA(fit)
-```
-
