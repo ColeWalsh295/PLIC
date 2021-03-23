@@ -19,12 +19,12 @@ source('Calculate-MutInfo.R', local = TRUE)
 # Create dataframes for analyses
 ```{r}
 full.df <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
-  filter(Survey_x == 'C' | Survey_y == 'C') %>% # remove events with no CR surveys
+  filter(Survey_x == 'C' | Survey_y == 'C') #%>% # remove events with no CR surveys
   # remove pre-pandemic data
-  mutate(V4_x = as.Date(V4_x),
-         V4_y = as.Date(V4_y)) %>%
-  filter(V4_y < as.Date('2020-01-01') | (is.na(V4_y) & 
-                                           V4_x < as.Date('2020-01-01')))
+  # mutate(V4_x = as.Date(V4_x),
+  #        V4_y = as.Date(V4_y)) %>%
+  # filter(V4_y < as.Date('2020-01-01') | (is.na(V4_y) & 
+  #                                          V4_x < as.Date('2020-01-01')))
 
 # Remove FR scores
 full.df[(full.df$Survey_x == 'F') | is.na(full.df$Q3c_x), 'PreScores'] <- NA_real_
