@@ -1,0 +1,451 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+# Setup
+
+## Load necessary packages
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+library(plyr)
+library(readr)
+library(tidyverse)
+library(ryouready)
+library(nnet)
+library(ggthemes)
+library(reshape2)
+library(ggstatsplot)
+library(MRCV)
+library(DescTools)
+source('C:/Users/Cole/Documents/GitHub/PLIC/Processing-Scripts/PLIC_DataProcessing.R')
+theme_set(theme_classic(base_size = 12))
+```
+
+## Load and combine students' responses
+```{r, echo = FALSE}
+files = list.files("C:/Users/Cole/Documents/DATA/PLIC_DATA/SurveysNovember2020/", 
+                   recursive = TRUE, full.names = TRUE)
+
+read.classID.csv <- function(file){
+  # function to read file and assign class ID based on file name
+  df <- read.csv(file, header = T, skip = 1)
+  
+  if(nrow(df) > 0){
+    split.filename <- strsplit(file, '/')[[1]]
+    file.end <- split.filename[length(split.filename)]
+  
+    split.file.end <- strsplit(file.end, '_')[[1]]
+    class.ID <- split.file.end[length(split.file.end) - 1]
+    time <- split.file.end[length(split.file.end) - 3]
+  
+    df$Time <- time
+    df$Class.ID <- paste('R_', class.ID, sep = '')
+  }
+
+  return(df)
+}
+
+# header row with column names
+header = read.csv(files[1], header = F, nrows = 1, as.is = T)
+df.students = ldply(files, read.classID.csv) %>%
+  `colnames<-`(c(header, 'Time', 'Class.ID')) %>%
+  filter(V5 == 1) %>% # finished
+  filter((Qt1_3 > 30) | (Qt2_3 > 30) | (Qt3_3 > 30) | (Qt4_3 > 30)) #timing
+df.students <- df.students[df.students[, 'Unnamed: 7'] == 1,] # consent
+
+# text from rows beneath header
+info <- data.frame(lapply(read.csv(files[1], nrows = 1), 
+                          FUN = function(x) gsub("^.*- ", "", x)))
+
+# collapse gender/race/ethncity/major variables
+df.students <- Collapse.vars(df.students, matched = FALSE)
+
+# 4 conditions, 2x2; Likert means the student received Likert items on the first
+# three pages, None means they did not. 1/2 refers to which group the student saw 
+# first
+print('# of students by condition')
+table(df.students$Condition)
+
+print('# of unqiue classes')
+length(unique(df.students$Class.ID))
+
+# merge CIS data
+CIS.df <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Course_Information_Survey_filled.csv')[-1,] %>%
+  select(V1, Q4, Q6, Q7, Q19, Q27) %>%
+  `colnames<-`(c('Class.ID', 'School', 'Course.Number', 'Course.Level', 
+                 'Institution.cat', 'Lab.type'))
+
+df.students <- merge(df.students, CIS.df, by = 'Class.ID', all.x = TRUE)
+
+print('# of unique courses')
+# rename a couple courses to be consistent
+df.students <- df.students %>%
+  mutate(Course.Number = case_when(
+    Course.Number == "PHY 121 Section 0001" | 
+      Course.Number == "PHY 121 Section 0002" ~ "PHY 121",
+    TRUE ~ Course.Number))
+length(unique(df.students$Course.Number))
+
+print('# of unique schools')
+length(unique(df.students$School))
+
+df.students <- df.students %>%
+  mutate(Class.standing = case_when(
+    Q6a == 1 ~ 'Freshman',
+    Q6a == 2 ~ 'Sophomore',
+    Q6a == 3 ~ 'Junior',
+    Q6a == 4 ~ 'Senior',
+    Q6a == 5 ~ 'Grad',
+    Q6a == 8 ~ 'Other',
+    TRUE ~ 'Unknown'
+  ),
+  Course.Level = case_when(
+    Course.Level == 6 ~ 'High School',
+    Course.Level == 1 ~ 'Intro (alebgra)',
+    Course.Level == 2 ~ 'Intro (calculus)',
+    Course.Level == 3 ~ 'Sophomore',
+    Course.Level == 4 ~ 'Junior',
+    Course.Level == 5 ~ 'Senior',
+    Course.Level == 7 ~ 'Graduate'
+  ))
+```
+There are about 200 students in each of the four conditions, which is a good number. That should provide enough power for what we want to do.
+
+# Analysis
+
+## Check randomization
+```{r, message = FALSE, warning = FALSE}
+print('Class standing X Condition')
+table(df.students$Class.standing, df.students$Condition)
+chisq.test(df.students$Class.standing, df.students$Condition)
+
+print('Major X Condition')
+table(df.students$Major, df.students$Condition)
+chisq.test(df.students$Major, df.students$Condition)
+
+print('Gender X Condition')
+table(df.students$Gender, df.students$Condition)
+chisq.test(df.students$Gender, df.students$Condition)
+
+print('Race/ethnicity X Condition')
+df.students$Lab_purpose <- df.students$Condition
+Race.ethnicity.table(df.students, Lab.Purpose = TRUE, normalize = FALSE)
+
+set.seed(11)
+df.race <- df.students[, c('Condition', 
+                           names(df.students)[names(df.students) %like% 
+                                                'Race.ethnicity'])]
+df.race[is.na(df.race)] <- 0
+MI.test(df.race[, 1:(ncol(df.race) - 1)], I = 1, J = ncol(df.race) - 2, B = 1000, 
+        print.status = FALSE)
+
+print('Course level X Condition')
+table(df.students$Course.Level, df.students$Condition)
+chisq.test(df.students$Course.Level, df.students$Condition)
+```
+Randomization looks to have done its job. There aren't any glaring cases of over/under-representations in any of the conditions. I think class standing/course level/major are the most important things to pay attention to here. I don't have any reasons to think students responses would vary by gender and or race/ethnicity and bias our results. But, regardless, the conditions are balanced along these lines as well.
+
+## Who did a better job?
+
+I start with the multiple choice summary item that asks respondents who they thought did a better job of testing the model?
+
+### Plots and chi-squared tests
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+df.students[, 'Q4a'] <- as.factor(df.students[, 'Q4a'])
+df.students <- recode2(df.students, vars = 'Q4a', 
+                       recodes = "1 = '1'; 2 = '2'; 3 = 'B'; 4 = 'N'")
+ggplot(filter(df.students, !is.na(Q4a)), aes(x = Q4a, fill = Condition, 
+                                             group = Condition)) +
+    geom_bar(position = 'dodge', aes(y = ..prop..)) +
+    labs(fill = 'Condition', x = 'Selection', y = 'Fraction of respondents') +
+    scale_fill_discrete(labels = c('Group 1 first (Likert)', 
+                                   'Group 2 first (Likert)', 
+                                   'Group 1 first (No Likert)', 
+                                   'Group 2 first (No Likert)')) +
+    scale_x_discrete(labels = c('Group 1', 'Group 2', 
+                                'Both were\nhighly effective', 
+                                'Both were\nminimally effective'))
+
+df.students <- df.students %>% 
+  mutate(Likert = 1 * grepl('Likert', df.students$Condition),
+         G2.First = 1 * grepl('2', df.students$Condition))
+
+chisq.test(df.students$Condition, df.students$Q4a)
+chisq.test(df.students$Likert, df.students$Q4a)
+chisq.test(df.students$G2.First, df.students$Q4a)
+```
+Beginning with the summary item (Q4a: Which group do you think did a better job?), we fail to reject the null hypothesis (at alpha = 0.05) that the distribution of selections differ by condition. There are some trends: students are more likely to select the group they saw last as having done a better job. This effect isn't super big, obviously, and there's more on the effect size below.
+
+### Multinomial model of "Who did better?"
+```{r, echo = FALSE}
+# we'll use 'Both' as the base level throughout because its neutral and more common
+# than 'Neither' increasing precision
+df.students$Q4a <- relevel(df.students$Q4a, ref = 'B')
+model <- multinom(Q4a ~ Likert + G2.First, df.students)
+summary(model)
+ggcoefstats(model, output = 'tidy') %>%
+  filter(!grepl('Intercept', term)) %>% # we don't care about the intercepts
+  mutate(term = gsub('G2.First', 'Group 2 first', term),
+         term = gsub('Likert', 'Scaffolding', term),
+         term = gsub('_N', ' (Neither group/Both groups)', term),
+         term = gsub('_2', ' (Group 2/Both groups)', term),
+         term = gsub('_1', ' (Group 1/Both groups)', term)) %>%
+  arrange(desc(term)) %>%
+  ggcoefstats(.) +
+  labs(x = 'Estimated change in log odds', y = 'Effect', 
+       title = 'Which group did a better job?')
+```
+This multinomial illustrates the independent effects for Q4a. Showing the Likert items in the survey has little to no effect on students' responses to Q4a. Group ordering may have a small effect, with a greater proportion of students selecting "Group 1"" and "neither group" when shown Group 2 first. We cannot reject that any of these coefficients are different from zero and that our observations couldn't haven't been produced by random chance with a high degree of certainty.
+
+#### Model predictions
+
+I think its easier to interpret the size of this effect by looking at the expected proportions because we had a 2x2 design.
+
+```{r}
+dummy.df <- data.frame(Likert = c(0, 1, 0, 1), G2.First = c(0, 0, 1, 1))
+pred.df <- cbind(dummy.df, predict(model, type = 'probs', newdata = dummy.df)) %>%
+  mutate(Condition = case_when(
+    (Likert == 1) & (G2.First == 0) ~ 'Likert',
+    (Likert == 0) & (G2.First == 1) ~ 'Group 2 first',
+    (Likert == 1) & (G2.First == 1) ~ 'Likert/Group 2 first',
+    TRUE ~ 'No Likert/Group 1 first'
+  )) %>%
+  dplyr::select(-Likert, -G2.First) %>%
+  melt(., id.vars = 'Condition', variable.name = 'Selection',
+       value.name = 'Probability')
+print(pred.df)
+ggplot(pred.df, aes(x = factor(Condition, levels = c('No Likert/Group 1 first',
+                                                     'Likert', 'Group 2 first',
+                                                     'Likert/Group 2 first')), 
+                    y = Probability, color = Selection)) +
+  geom_point(size = 4) +
+  labs(title = 'Predicted probability of selection by condition', x = '') +
+  scale_color_discrete(labels = c('Both were\nhighly effective', 'Group 1', 
+                                  'Group 2', 'Both were\nminimally effective'))
+```
+The fraction of students selecting Group 2 decreases by about 6 percentage points when shown Group 2 first. The fraction selecting Group 1 conversely increases by about 6 percentage points. The effects of the Likert items are about 4 percentage points in the same directions.
+
+### Raw percentages
+
+Below, I look at the raw percentages by the Likert and ordering conditions separately without any modeling.
+```{r}
+df.students %>%
+  filter(!is.na(Q4a)) %>%
+  group_by(Likert, Q4a) %>%
+  summarize(n = n()) %>%
+  mutate(freq = n/sum(n))
+
+ggplot(filter(df.students, !is.na(Q4a)), aes(x = Q4a, fill = factor(Likert), 
+                                             group = factor(Likert))) +
+    geom_bar(position = 'dodge', aes(y = ..prop..)) +
+    labs(fill = 'Likert condition', x = 'Selection', 
+         y = 'Fraction of respondents') +
+  scale_fill_discrete(labels = c('No Likert', 'Likert')) +
+  scale_x_discrete(labels = c('Both were\nhighly effective', 'Group 1', 'Group 2', 
+                              'Both were\nminimally effective'))
+
+df.students %>%
+  filter(!is.na(Q4a)) %>%
+  group_by(G2.First, Q4a) %>%
+  summarize(n = n()) %>%
+  mutate(freq = n/sum(n))
+
+ggplot(filter(df.students, !is.na(Q4a)), aes(x = Q4a, fill = factor(G2.First), 
+                                             group = factor(G2.First))) +
+    geom_bar(position = 'dodge', aes(y = ..prop..)) +
+    labs(fill = 'Group seen first', x = 'Selection', 
+         y = 'Fraction of respondents') +
+  scale_fill_discrete(labels = c('1','2')) +
+  scale_x_discrete(labels = c('Both were\nhighly effective', 'Group 1', 'Group 2', 
+                              'Both were\nminimally effective'))
+```
+As above, the effects of the Likert items and group ordering are about four and six percentage points, respectively.
+
+## "What to do next" questions
+
+### Plots and chi-squared tests
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# pull only the 'what's next' questions (and condition variables)
+df.next <- df.students[, 
+                       grepl('(Q(134|336|2e|348|147)_(\\d+)$|Condition|Likert|G2.First)',
+                             names(df.students))] %>%
+  mutate(id = row.names(.)) %>% # need an ID column to convert back to wide
+  melt(., id.vars = c('id', 'Condition', 'Likert', 'G2.First'), 
+       variable.name = 'Response_choice') %>%
+  # combine 'next' questions from Likert and None conditions into single variable
+  mutate(value = ifelse(is.na(value), 0, 1),
+         value = ifelse(Likert == 1 & Response_choice %like% 'Q336|Q348', 
+                        NA_real_, value),
+         value = ifelse(Likert == 0 & Response_choice %like% 'Q134|Q2e', 
+                        NA_real_, value),
+         Response_choice = str_replace(Response_choice, '336', '134'),
+         Response_choice = str_replace(Response_choice, '348', '2e'),
+         Response_choice = gsub('134', '1e', Response_choice),
+         Response_choice = gsub('147', '3e', Response_choice)) %>%
+  na.omit() %>% 
+  rowwise() %>%
+  mutate(Item = strsplit(as.character(Response_choice), '_')[[1]][1],
+         RC_code = strsplit(as.character(Response_choice), '_')[[1]][2]) %>%
+  mutate(Page = case_when(
+    Item == 'Q1e' ~ 'Group 1',
+    Item == 'Q2e' ~ 'Group 2',
+    TRUE ~ 'Group 2 (cont.)'
+  )) %>%
+  filter(!(Response_choice %in% c('Q1e_7')))
+
+N.RCs <- unique(df.next %>%
+                  select(Item, RC_code)) %>%
+  group_by(Item) %>%
+  summarize(N = n())
+
+set.seed(11) # for consistency
+for(Q in c('Q1e', 'Q2e', 'Q3e')){
+  df.dummy <- df.next %>%
+    filter(Item == Q)
+  
+  # counts of students in each condition to convert graphs to frequencies
+  N.students.vec <- c(rep(table(df.students$Condition)[1], 
+                          N.RCs[N.RCs$Item == Q, 'N'] %>%
+                            pull()), 
+                      rep(table(df.students$Condition)[2], 
+                          N.RCs[N.RCs$Item == Q, 'N'] %>%
+                            pull()), 
+                      rep(table(df.students$Condition)[3], 
+                          N.RCs[N.RCs$Item == Q, 'N'] %>%
+                            pull()), 
+                      rep(table(df.students$Condition)[4], 
+                          N.RCs[N.RCs$Item == Q, 'N'] %>%
+                            pull()))
+  
+  #png(filename = paste('C:/Users/Cole/Documents/Dissertation/AB_analysis/', Q, 
+   #                    '_AB-condition.png', sep = ''))
+  p <- ggplot(df.dummy %>%
+                filter(value == 1), 
+              aes(x = Response_choice, fill = Condition, group = Condition)) +
+    geom_bar(position = 'dodge', aes(y = (..count..)/N.students.vec)) +
+    labs(fill = 'Condition', x = 'Response choice', 
+         y = 'Fraction of respondents') +
+    scale_fill_discrete(labels = c('Group 1 first (Likert)', 
+                                   'Group 2 first (Likert)', 
+                                   'Group 1 first (No Likert)', 
+                                   'Group 2 first (No Likert)')) +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1))#, 
+          #legend.position = 'none')
+  print(p)
+  #dev.off()
+  
+  if(Q == 'Q1e'){ # pull info for specific set of questions
+    info.temp <- info[, names(info)[names(info) %like% 'Q134_(\\d+)$']]
+  } else if(Q == 'Q2e'){
+    info.temp <- info[, names(info)[names(info) %like% 'Q2e_(\\d+)$']]
+  } else{
+    info.temp <- info[, names(info)[names(info) %like% 'Q147_(\\d+)$']]
+  }
+  names(info.temp) <- unlist(lapply(names(info.temp), 
+                                    function(x) strsplit(x, '_')[[1]][2]))
+  print(data.frame(t(info.temp)))
+  
+  # need to convert dataset for question back to wide form to use with MI.test
+  print(MI.test(dcast(df.dummy, formula = id + Condition ~ Response_choice,
+                      fun.aggregate = sum, value.var = "value") %>%
+                  select(-id), I = 1, 
+          J = length(unique(df.dummy$Response_choice)), B = 1000, 
+          print.status = FALSE))
+}
+```
+MI.test uses three methods for conducting chi-squared tests of independence with multiple response categorical variables (MRCV), which violate regular chi-squared test assumptions of mutual exclusivity. The p-values for the three "what to do next" questions fell in the following ranges: (Group 1: p = (0.17, 0.25), Group 2: p < 0.001, Group 2, cont: p = (<0.001, 0.021)). We can't say that there are differences in how students respond to the item about what Group 1 should do next, but there are clear differences in how students respond to the items about what Group 2 should do next.
+
+Looking at the individual item chi-squared values (Bonferroni-adjusted) and the plots, the differences in distributions are driven by one item in both cases: 34 -- "Repeat the experiment with more and different masses" and, again, is mainly affected by the ordering of the groups. I examine this particular item below, as with the "who did better" item, first by modeling students' selections and then examining raw percentages.
+
+### Multinomial model of "Who did better?"
+```{r, echo = FALSE}
+df.masses <- df.next %>%
+  filter(Response_choice == 'Q2e_34' | Response_choice == 'Q3e_34')
+
+model <- glm(value ~ Item * (Likert + G2.First), family = 'binomial', 
+             data = df.masses)
+summary(model)
+ggcoefstats(model, output = 'tidy') %>%
+  filter(!grepl('Intercept', term)) %>% # we don't care about the intercepts
+  mutate(term = gsub('G2.First', 'Group 2 first', term),
+         term = gsub('Likert', 'Scaffolding', term),
+         term = gsub('ItemQ3e', 'Variable intercept', term)) %>%
+  arrange(desc(term)) %>%
+  ggcoefstats(.) +
+  labs(x = 'Estimated change in log odds', y = 'Effect', 
+       title = 'Repeat the experiment with more and different masses')
+```
+I tested interaction terms here to investigate whether the effects of scaffolding/ordering differed across the two questions. They do not. Showing students Group 2 first increases the log odds that they will suggest Group 2 should test more masses by about 0.83, while introducing scaffolding decreases the log odds by about 0.5.
+
+#### Model predictions
+
+We examine these results in terms of predicted probabilities.
+```{r}
+dummy.df <- data.frame(Likert = c(0, 1, 0, 1), G2.First = c(0, 0, 1, 1), 
+                       Item = 'Q2e')
+pred.df <- cbind(dummy.df, predict(model, type = 'response', 
+                                   newdata = dummy.df)) %>%
+  mutate(Condition = case_when(
+    (Likert == 1) & (G2.First == 0) ~ 'Likert',
+    (Likert == 0) & (G2.First == 1) ~ 'Group 2 first',
+    (Likert == 1) & (G2.First == 1) ~ 'Likert/Group 2 first',
+    TRUE ~ 'No Likert/Group 1 first'
+  )) %>%
+  dplyr::select(-Likert, -G2.First, -Item) %>%
+  melt(., value.name = 'Probability') %>%
+  select(-variable)
+print(pred.df) 
+ggplot(pred.df, aes(x = factor(Condition, levels = c('No Likert/Group 1 first',
+                                                     'Likert', 'Group 2 first',
+                                                     'Likert/Group 2 first')), 
+                    y = Probability)) +
+  geom_point(size = 4) +
+  labs(title = 'Predicted probability of selection by condition', x = '')
+```
+The fraction of students suggesting Group 2 should test additional masses increases by 9 to 14 percentage points when shown Group 2 first, while scaffolding using Likert items decreases this fraction by 5 to 10 percentage points. The difference between the predicted probabilities for the Likert/Group 1 first condition and the No Likert/Group 2 first condition is almost 20 percentage points.
+
+### Raw percentages
+
+Below, I look at the raw percentages by the Likert and ordering conditions separately without any modeling.
+```{r}
+df.Likert <- df.next %>%
+  filter(Response_choice %in% c('Q2e_34', 'Q3e_34')) %>%
+  group_by(Likert, Response_choice) %>%
+  summarize(selected = sum(value), n = n()) %>%
+  mutate(freq = selected/n) %>%
+  select(-selected, -n)
+df.Likert
+
+ggplot(df.Likert %>%
+         mutate(Likert = ifelse(Likert == 0, 'No', 'Yes'),
+                Response_choice = ifelse(Response_choice == 'Q2e_34', 
+                                         'Fixed intercept', 'Variable intercept')), 
+  aes(x = factor(Likert), y = freq, fill = factor(Likert))) +
+  geom_bar(stat = 'identity') +
+  facet_wrap(~Response_choice) +
+  labs(x = 'Likert condition', y = 'Fraction of students', 
+       fill = 'Likert condition',
+       title = 'Repeat the experiment with more and different masses')
+
+df.group <- df.next %>%
+  filter(Response_choice %in% c('Q2e_34', 'Q3e_34')) %>%
+  group_by(G2.First, Response_choice) %>%
+  summarize(selected = sum(value), n = n()) %>%
+  mutate(freq = selected/n) %>%
+  select(-selected, -n)
+df.group
+
+ggplot(df.group %>%
+         mutate(Group.seen.first = ifelse(G2.First == 0, 1, 2),
+                Response_choice = ifelse(Response_choice == 'Q2e_34', 
+                                         'Fixed intercept', 'Variable intercept')), 
+  aes(x = factor(Group.seen.first), y = freq, fill = factor(Group.seen.first))) +
+  geom_bar(stat = 'identity') +
+  facet_wrap(~Response_choice) +
+  labs(x = 'Group seen first', y = 'Fraction of students', 
+       fill = 'Group seen first',
+       title = 'Repeat the experiment with more and different masses')
+```
+Consistent with our modeling, including scaffolding items decreases the likelihood of students suggesting that Group 2 should test more masses by 6-7 percentage points. Putting Group 2 first increases the likelihood by 11-12 percentage points, essentially doubling the probablity.
+

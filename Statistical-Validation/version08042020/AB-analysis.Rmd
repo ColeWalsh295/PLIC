@@ -22,27 +22,114 @@ theme_set(theme_classic(base_size = 12))
 ```
 
 ## Load and combine students' responses
-```{r, echo = FALSE, message = FALSE, warning = FALSE}
+```{r, echo = FALSE}
 files = list.files("C:/Users/Cole/Documents/DATA/PLIC_DATA/SurveysNovember2020/", 
                    recursive = TRUE, full.names = TRUE)
 
-header = read.csv(files[1], header = F, nrows = 1, as.is = T)
-df.students = ldply(files, read.csv, header = T, skip = 1) %>%
-  `colnames<-`(header) %>%
-  filter(V5 == 1) %>%
-  filter((Qt1_3 > 30) | (Qt2_3 > 30) | (Qt3_3 > 30) | (Qt4_3 > 30))
-df.students <- df.students[df.students[, 'Unnamed: 7'] == 1,]
+read.classID.csv <- function(file){
+  # function to read file and assign class ID based on file name
+  df <- read.csv(file, header = T, skip = 1)
+  
+  if(nrow(df) > 0){
+    split.filename <- strsplit(file, '/')[[1]]
+    file.end <- split.filename[length(split.filename)]
+  
+    split.file.end <- strsplit(file.end, '_')[[1]]
+    class.ID <- split.file.end[length(split.file.end) - 1]
+    time <- split.file.end[length(split.file.end) - 3]
+  
+    df$Time <- time
+    df$Class.ID <- paste('R_', class.ID, sep = '')
+  }
 
+  return(df)
+}
+
+# header row with column names
+header = read.csv(files[1], header = F, nrows = 1, as.is = T)
+df.students = ldply(files, read.classID.csv) %>%
+  `colnames<-`(c(header, 'Time', 'Class.ID')) %>%
+  filter(V5 == 1) %>% # finished
+  filter((Qt1_3 > 30) | (Qt2_3 > 30) | (Qt3_3 > 30) | (Qt4_3 > 30)) #timing
+df.students <- df.students[df.students[, 'Unnamed: 7'] == 1,] # consent
+
+# text from rows beneath header
 info <- data.frame(lapply(read.csv(files[1], nrows = 1), 
                           FUN = function(x) gsub("^.*- ", "", x)))
 
+# collapse gender/race/ethncity/major variables
 df.students <- Collapse.vars(df.students, matched = FALSE)
 
+# 4 conditions, 2x2; Likert means the student received Likert items on the first
+# three pages, None means they did not. 1/2 refers to which group the student saw 
+# first
+print('# of students by condition')
 table(df.students$Condition)
-length(files)
-chisq.test(df.students$Q6a, df.students$Condition)
+
+print('# of unqiue classes')
+length(unique(df.students$Class.ID))
+
+# merge CIS data
+CIS.df <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Course_Information_Survey_filled.csv')[-1,] %>%
+  select(V1, Q4, Q6, Q7, Q19, Q27) %>%
+  `colnames<-`(c('Class.ID', 'School', 'Course.Number', 'Course.Level', 
+                 'Institution.cat', 'Lab.type'))
+
+df.students <- merge(df.students, CIS.df, by = 'Class.ID', all.x = TRUE)
+
+print('# of unique courses')
+# rename a couple courses to be consistent
+df.students <- df.students %>%
+  mutate(Course.Number = case_when(
+    Course.Number == "PHY 121 Section 0001" | 
+      Course.Number == "PHY 121 Section 0002" ~ "PHY 121",
+    TRUE ~ Course.Number))
+length(unique(df.students$Course.Number))
+
+print('# of unique schools')
+length(unique(df.students$School))
+
+df.students <- df.students %>%
+  mutate(Class.standing = case_when(
+    Q6a == 1 ~ 'Freshman',
+    Q6a == 2 ~ 'Sophomore',
+    Q6a == 3 ~ 'Junior',
+    Q6a == 4 ~ 'Senior',
+    Q6a == 5 ~ 'Grad',
+    Q6a == 8 ~ 'Other',
+    TRUE ~ 'Unknown'
+  ),
+  Course.Level = case_when(
+    Course.Level == 6 ~ 'High School',
+    Course.Level == 1 ~ 'Intro (alebgra)',
+    Course.Level == 2 ~ 'Intro (calculus)',
+    Course.Level == 3 ~ 'Sophomore',
+    Course.Level == 4 ~ 'Junior',
+    Course.Level == 5 ~ 'Senior',
+    Course.Level == 7 ~ 'Graduate'
+  ))
+```
+There are about 200 students in each of the four conditions, which is a good number. That should provide enough power for what we want to do.
+
+# Analysis
+
+## Check randomization
+```{r, message = FALSE, warning = FALSE}
+print('Class standing X Condition')
+table(df.students$Class.standing, df.students$Condition)
+chisq.test(df.students$Class.standing, df.students$Condition)
+
+print('Major X Condition')
+table(df.students$Major, df.students$Condition)
 chisq.test(df.students$Major, df.students$Condition)
+
+print('Gender X Condition')
+table(df.students$Gender, df.students$Condition)
 chisq.test(df.students$Gender, df.students$Condition)
+
+print('Race/ethnicity X Condition')
+df.students$Lab_purpose <- df.students$Condition
+Race.ethnicity.table(df.students, Lab.Purpose = TRUE, normalize = FALSE)
 
 set.seed(11)
 df.race <- df.students[, c('Condition', 
@@ -51,15 +138,15 @@ df.race <- df.students[, c('Condition',
 df.race[is.na(df.race)] <- 0
 MI.test(df.race[, 1:(ncol(df.race) - 1)], I = 1, J = ncol(df.race) - 2, B = 1000, 
         print.status = FALSE)
-```
 
-# Analysis
+print('Course level X Condition')
+table(df.students$Course.Level, df.students$Condition)
+chisq.test(df.students$Course.Level, df.students$Condition)
+```
+Randomization looks to have done its job. There aren't any glaring cases of over/under-representations in any of the conditions. I think class standing/course level/major are the most important things to pay attention to here. I don't have any reasons to think students responses would vary by gender and or race/ethnicity and bias our results. But, regardless, the conditions are balanced along these lines as well.
 
 ## Plots and chi-squared tests
 ```{r, warning = FALSE, message = FALSE, echo = FALSE}
-# 4 conditions, 2x2; Likert means the student received Likert items on the first
-# three pages, None means they did not. 1/2 refers to which group the student saw 
-# first
 Questions <- c('Q4a', 'Q152_1',	'Q152_2', 'Q152_3',	'Q152_4', 'Q153_1', 'Q153_2', 'Q153_3', 'Q154_1', 'Q154_2', 'Q154_3', 'Q154_4', 'Q148')
 
 # need to recode questions, throughout Group 1 is synonymous with Team Panda and
