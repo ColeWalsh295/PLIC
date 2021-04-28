@@ -42,14 +42,14 @@ ScalePlotUI <- function(id, Demos = TRUE){
                           choiceValues = c('None', 'Gender', 'URM', 'Major', 
                                            'Class_Standing'))
       ),
-      column(8, plotOutput(ns("plotScale")))
+      column(8, plotlyOutput(ns("plotScale")))
     )
   } else {
     fluidRow(
       column(4, selectInput(ns("scale"), "Scale:", 
                             choices = c('Evaluating Models', 'Evaluating Methods',
                                         'Suggesting Follow-ups', 'Total Score'))),
-      column(8, plotOutput(ns("plotScale")))
+      column(8, plotlyOutput(ns("plotScale")))
     )
   }
 }
@@ -61,14 +61,14 @@ QuestionPlotUI <- function(id, Demos = FALSE){
   
   if(Demos){
     fluidRow(
-      column(12, plotOutput(ns("plotQuestion")))
+      column(12, plotlyOutput(ns("plotQuestion")))
     )
   } else {
     fluidRow(
       column(4, selectInput(ns("question"), "Question:", 
                             choices = c('Q1b', 'Q1d', 'Q1e', 'Q2b', 'Q2d', 'Q2e', 
                                         'Q3b', 'Q3d', 'Q3e', 'Q4b'))),
-      column(8, plotOutput(ns("plotQuestion")))
+      column(8, plotlyOutput(ns("plotQuestion")))
     )
   }
 }
@@ -81,14 +81,14 @@ ResponsesPlotUI <- function(id, Demos = TRUE){
   
   if(!Demos){
     fluidRow(
-      column(12, plotOutput(ns("plotResponses")))
+      column(12, plotlyOutput(ns("plotResponses")))
     )
   } else {
     fluidRow(
       column(2, selectInput(ns("question"), "Question:", 
                             choices = c('Q1b', 'Q1d', 'Q1e', 'Q2b', 'Q2d', 'Q2e', 
                                         'Q3b', 'Q3d', 'Q3e', 'Q4b'))),
-      column(10, plotOutput(ns("plotResponses")))
+      column(10, plotlyOutput(ns("plotResponses")))
     )
   }
 }

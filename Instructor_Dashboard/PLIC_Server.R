@@ -113,7 +113,7 @@ ScalePlot <- function(input, output, session, data, Class.var = NULL){
               input$scale == 'Total Score' ~ 'TotalScores')
   })
   
-  output$plotScale = renderPlot({
+  output$plotScale = renderPlotly({
     if(!is.null(Class.var)){
       p <- ggplot(data(), aes_string(x = 'TimePoint', y = Scale(), 
                                      color = Class.var)) +
@@ -140,7 +140,8 @@ ScalePlot <- function(input, output, session, data, Class.var = NULL){
                                         "#cc79a7")) +
           shiny_theme
       } else {
-        p <- ggplot(data(), aes_string(y = Scale(), color = 'TimePoint')) +
+        p <- ggplot(data(), aes_string(y = Scale(), x = 'TimePoint', 
+                                       color = 'TimePoint')) +
           geom_boxplot() +
           labs(x = '', y = input$scale, title = "Your students' performance") +
           scale_color_manual(values = c("#0072b2", "#d55e00", "#009e73", 
@@ -149,6 +150,8 @@ ScalePlot <- function(input, output, session, data, Class.var = NULL){
           theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
       }
     }
+    p <- ggplotly(p) %>%
+      layout(boxmode = 'group')
     return(p)
   })
   if(is.null(Class.var)){
@@ -178,7 +181,7 @@ QuestionPlot <- function(input, output, session, data, Demo = NULL,
       }
       return(Questions.df)
     })
-    output$plotQuestion = renderPlot({
+    output$plotQuestion = renderPlotly({
       p <- ggplot(Questions.df(), aes(x = variable, y = value, 
                                       color = TimePoint)) +
         geom_boxplot() +
@@ -190,11 +193,13 @@ QuestionPlot <- function(input, output, session, data, Demo = NULL,
       if(Demographic() != 'None'){
         p <- p + facet_wrap(paste('~', Demographic()))
       }
+      p <- ggplotly(p) %>%
+        layout(boxmode = 'group')
       return(p)
     })
   } else {
-    output$plotQuestion = renderPlot({
-      ggplot(data(), aes_string(x = 'TimePoint', y = toupper(input$question), 
+    output$plotQuestion = renderPlotly({
+      p <- ggplot(data(), aes_string(x = 'TimePoint', y = toupper(input$question), 
                                 color = Class.var)) +
         geom_boxplot() +
         labs(x = 'TimePoint', y = 'Score', 
@@ -202,6 +207,9 @@ QuestionPlot <- function(input, output, session, data, Demo = NULL,
         scale_color_manual(values = c("#0072b2", "#d55e00", "#009e73", 
                                       "#cc79a7")) +
         shiny_theme
+      p <- ggplotly(p) %>%
+        layout(boxmode = 'group')
+      return(p)
     })
     return(reactive(input$question))
   }
@@ -238,7 +246,7 @@ ResponsesPlot <- function(input, output, session, data, Demo = NULL,
       }
       return(Responses.df)
     })
-    output$plotResponses = renderPlot({
+    output$plotResponses = renderPlotly({
       p <- ggplot(Responses.df(), aes(x = variable, y = value, 
                                       fill = TimePoint)) +
         geom_bar(stat = 'identity', position = 'dodge') +
@@ -250,6 +258,8 @@ ResponsesPlot <- function(input, output, session, data, Demo = NULL,
       if(Demographic() != 'None'){
         p <- p + facet_wrap(paste('~', Demographic()))
       }
+      p <- ggplotly(p) %>%
+        layout(boxmode = 'group')
       return(p)
     })
   } else {
@@ -264,7 +274,7 @@ ResponsesPlot <- function(input, output, session, data, Demo = NULL,
         melt(.)
       return(Responses.df)
     })
-    output$plotResponses = renderPlot({
+    output$plotResponses = renderPlotly({
       p <- ggplot(Responses.df(), aes_string(x = 'variable', y = 'value', 
                                              fill = Class.var)) +
         geom_bar(stat = 'identity', position = 'dodge') +
@@ -274,7 +284,7 @@ ResponsesPlot <- function(input, output, session, data, Demo = NULL,
         scale_fill_manual(values = c("#0072b2", "#d55e00", "#009e73", "#cc79a7")) +
         shiny_theme +
         facet_wrap(~TimePoint)
-      return(p)
+      return(ggplotly(p))
     })
   }
 }
