@@ -1,0 +1,854 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+# Setup
+```{r global_options, include = FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+## Load necessary packages
+```{r, results = 'hide'}
+library(easypackages)
+libraries('plyr', 'tidyverse', 'data.table', 'reshape2', 'ggpubr', 'lmerTest', 
+          'reghelper', 'car', 'lattice', 'sjstats', 'sjPlot', 'gridExtra', 
+          'stargazer', 'lavaan', 'semPlot', 'psych', 'grid', 'effectsize', 
+          'mice', 'miceadds', 'broom.mixed', 'ggeffects', 'plotly')
+source('C:/Users/Cole/Documents/GitHub/PLIC/Processing-Scripts/PLIC_DataProcessing.R')
+source('ECLASS_Processing.R')
+```
+
+## Read, score, and match
+
+### PLIC
+```{r}
+df.PLIC.full <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
+  filter(Survey_x == 'C' | Survey_y == 'C') %>% # remove events with no CR surveys
+  mutate(V4_x = as.Date(V4_x),
+         V4_y = as.Date(V4_y)) %>%
+  filter(V4_y < as.Date('2021-01-01') | (is.na(V4_y) &
+                                           V4_x < as.Date('2021-01-01'))) %>%
+  filter((Lab_level == 'Intro-Algebra') | (Lab_level == 'Intro-Calculus'))
+
+# Remove FR scores
+df.PLIC.full[(df.PLIC.full$Survey_x == 'F'), 'PreScores'] <- NA_real_
+df.PLIC.full[(df.PLIC.full$Survey_y == 'F'), 'PostScores'] <- NA_real_
+df.PLIC.full <- df.PLIC.full %>%
+  filter(!is.na(PreScores) | !is.na(PostScores))
+
+# Remove whole classes without goal and/or level information or that were only administered at pre or post
+df.PLIC.course <- data.table(df.PLIC.full)[, 
+                                           `:=`(N.students = .N, 
+                                                pre.rate = sum(Survey_x == 'C')/.N,
+                                                post.rate = sum(Survey_y == 'C')/.N), 
+                                           .(Class_ID)] %>%
+  data.frame(.)
+
+df.PLIC.course <- df.PLIC.course %>%
+  filter(!is.na(Lab_purpose) & (Lab_purpose != '') & (pre.rate > 0) & 
+           (post.rate > 0))
+
+df.PLIC.course <- df.PLIC.course %>%
+  Collapse.vars(.) %>%
+  mutate(Lab.type = relevel(as.factor(case_when(
+    Lab_purpose == 'Reinforce concepts' ~ 'Concepts-based',
+    Lab_purpose == 'Both about equally' ~ 'Mixed',
+    Lab_purpose == 'Develop lab skills' ~ 'Skills-based')), 
+    ref = 'Concepts-based'))
+
+df.PLIC.course <- df.PLIC.course[, names(df.PLIC.course)[names(df.PLIC.course) %like% 'Race|Gender|Major|Lab.type|Scores|Class_ID|Institution_type|institution_id|student_id$|Q28|Q29|Q31|Q32|Q33']] %>%
+  mutate(Assessment = 'PLIC',
+         anon_institution_id = 1000 + anon_institution_id)
+# differentiate E-CLASS and PLIC institutions
+
+# get matched dataset
+df.PLIC.matched <- df.PLIC.course %>%
+  filter(!is.na(PreScores) & !is.na(PostScores))
+```
+
+### E-CLASS
+```{r}
+# read course information survey (CIS) and pre/post survey data
+df.cis <- read.csv('C:/Users/Cole/Documents/GRA_Summer2020/eclass-public-analysis/anon_cis_CW.csv')
+names(df.cis) <- paste(names(df.cis), '.CIS', sep = '')
+df.pre <- Read.Score('C:/Users/Cole/Documents/GRA_Summer2020/eclass-public-analysis/anon_pre.csv')
+names(df.pre) <- paste(names(df.pre), '.pre', sep = '')
+df.pre$pre.id <- row.names(df.pre)
+
+# join CIS on presurvey
+df.cis.pre <- right_join(df.cis, df.pre, 
+                         by = c('pre_survey_id.CIS' = 'survey_id.pre'))
+df.post <- Read.Score('C:/Users/Cole/Documents/GRA_Summer2020/eclass-public-analysis/anon_post.csv')
+names(df.post) <- paste(names(df.post), '.post', sep = '')
+df.post$post.id <- row.names(df.post)
+
+df.cis.post <- right_join(df.cis, df.post,
+                          by = c('post_survey_id.CIS' = 'survey_id.post'))
+matched.df <- inner_join(df.cis.pre, df.cis.post, 
+                         by = c(names(df.cis), 
+                                'anon_student_id.pre' = 'anon_student_id.post'))
+
+df.ECLASS.full <- rbind.fill(matched.df, df.cis.pre[!(df.cis.pre$pre.id %in% 
+                                                        matched.df$pre.id),],
+                             df.cis.post[!(df.cis.post$post.id %in%
+                                             matched.df$post.id),])
+
+df.ECLASS.full <- df.ECLASS.full %>%
+  Collapse.vars.ECLASS(.) %>%
+  mutate(anon_student_id = ifelse(!is.na(anon_student_id.post),
+                                  anon_student_id.post, 
+                                  anon_student_id.pre)) %>%
+  filter(Course.level == 'FY') # only examining FY courses
+
+df.ECLASS.full <- 
+  data.table(df.ECLASS.full)[, 
+                             `:=`(N.students = .N, 
+                                  pre.rate = sum(!is.na(student.score.pre))/.N,
+                                  post.rate = sum(!is.na(student.score.post))/.N), 
+                             .(ResponseId.CIS)] %>%
+  data.frame() %>%
+  rename.vars(., df.PLIC.course) %>%
+  recode.CIS(.)
+
+# remove whole classes without type and/or level information
+df.ECLASS.course <- df.ECLASS.full %>%
+  filter(!is.na(Lab.type) & !is.na(Course.level) & (pre.rate > 0) & 
+           (post.rate > 0))
+
+df.ECLASS.course <- df.ECLASS.course[, names(df.ECLASS.course)[names(df.ECLASS.course) %like% 'Race|Gender|Major|Lab.type|Scores|Class_ID|Institution_type|institution_id|student_id$|Q28_|Q29_|Q31_|Q32_|Q33_']] %>%
+  mutate(Assessment = 'E-CLASS')
+
+# get matched dataset
+df.ECLASS.matched <- df.ECLASS.course %>%
+  filter(!is.na(PreScores) & !is.na(PostScores))
+
+# combined E-CLASS and PLIC datasets
+df.course <- rbind(df.PLIC.course, df.ECLASS.course)
+df.matched <- rbind(df.PLIC.matched, df.ECLASS.matched)
+
+rm(df.cis, df.cis.pre, df.cis.post, df.pre, df.post)
+```
+
+# Summary of datasets
+```{r}
+summary.datasets <- function(df.full, df.course, df.matched){
+  df <- data.frame(N.student.records = unlist(lapply(list(df.full, df.course,
+                                                          df.matched), 
+                                                     function(x) nrow(x))),
+                   N.students = unlist(lapply(list(df.full, df.course, df.matched),
+                                              function(x) 
+                                                length(unique(x[, 'anon_student_id'])))),
+                   N.classes = unlist(lapply(list(df.full, df.course, df.matched), 
+                                             function(x) 
+                                               length(unique(x[, 'Class_ID'])))),
+                   N.institutions = unlist(lapply(list(df.full, df.course,
+                                                       df.matched), function(x)
+                                                         length(unique(x[, 'anon_institution_id'])))),
+                   dataset = c('full dataset', 'course info', 'matched'))
+  
+  return(df)
+}
+
+rbind(summary.datasets(df.ECLASS.full, df.ECLASS.course, df.ECLASS.matched) %>%
+        mutate(Assessment = 'E-CLASS'), 
+      summary.datasets(df.PLIC.full, df.PLIC.course, df.PLIC.matched) %>%
+        mutate(Assessment = 'PLIC'))
+
+# Breakdown of institution type and lab type
+table(df.matched[!duplicated(df.matched$anon_institution_id), 
+                 c('Institution_type', 'Assessment')], exclude = NULL)
+table(df.matched[!duplicated(df.matched$Class_ID), 
+                 c('Lab.type', 'Assessment')], exclude = NULL)
+
+rm(df.ECLASS.full, df.PLIC.full)
+```
+
+# Analysis
+
+## Students' scores by demographics and type of lab
+
+### Demographic breakdowns
+```{r}
+Race.ethnicity.cols <- names(df.matched)[names(df.matched) %like% 'Race']
+Race.ethnicity.table <- function(df, col, Lab.type = FALSE){
+  # race/ethnicity variables are not independent...this function calculates tables
+  # for each of those variables
+  if(Lab.type){
+      tab <- table(df[, c(col, 'Lab.type', 'Assessment')], exclude = NULL)
+  } else {
+    tab <- table(df[, c(col, 'Assessment')], exclude = NULL)
+  }
+  return(data.frame(tab) %>%
+           filter(get(col) == 1))
+}
+
+# get demographic breakdowns across lab type
+table(df.matched[, c('Lab.type', 'Assessment')], exclude = NULL)
+table(df.matched[, c('Gender', 'Assessment')], exclude = NULL)
+
+rbind.fill(lapply(Race.ethnicity.cols, Race.ethnicity.table, df = df.matched)) %>%
+  melt(id.vars = c('Assessment', 'Freq')) %>%
+  filter(value == 1) %>%
+  select(Assessment, variable, Freq) %>%
+  arrange(Assessment, variable)
+
+table(df.matched[, c('Gender', 'Lab.type', 'Assessment')], exclude = NULL)
+
+rbind.fill(lapply(Race.ethnicity.cols, Race.ethnicity.table, df = df.matched, 
+                  Lab.type = TRUE)) %>%
+  melt(id.vars = c('Assessment', 'Lab.type', 'Freq')) %>%
+  filter(value == 1) %>%
+  select(Assessment, Lab.type, variable, Freq) %>%
+  arrange(Assessment, variable)
+```
+
+### Mixed-effects models
+
+Fit null model with random intercepts for class and institution, which measures the interclass correlation coefficient (ICC; the amount of variance explained by the random effects in our model alone). Then, we fit our model of interest.
+```{r}
+formula.null <- as.formula('PostScores ~ (1 | anon_institution_id/Class_ID)')
+formula.main <- as.formula('PostScores ~ PreScores + Lab.type * (Gender + 
+                            Race.ethnicity.AmInd + Race.ethnicity.NatHawaii + 
+                            Race.ethnicity.Other + Race.ethnicity.Black +
+                            Race.ethnicity.Hispanic + Race.ethnicity.Asian + 
+                            Race.ethnicity.White) + 
+                            Major + (1 | anon_institution_id/Class_ID)')
+
+print(paste('E-CLASS null R2:', 
+            as.numeric(r2(lmer(formula.null, df.ECLASS.matched))$R2_conditional)))
+print(paste('PLIC null R2:', 
+            as.numeric(r2(lmer(formula.null, df.PLIC.matched))$R2_conditional)))
+
+
+mod.ECLASS <- lmer(update(formula.main, ~. + Lab.type * Race.ethnicity.unknown),
+                   df.ECLASS.matched)
+mod.PLIC <- lmer(formula.main, df.PLIC.matched)
+
+print(paste('E-CLASS conditional R2:', 
+            as.numeric(r2(mod.ECLASS)$R2_conditional)))
+print(paste('PLIC conditional R2:', 
+            as.numeric(r2(mod.PLIC)$R2_conditional)))
+
+print(paste('E-CLASS marginal R2:', 
+            as.numeric(r2(mod.ECLASS)$R2_marginal)))
+print(paste('PLIC marginal R2:', 
+            as.numeric(r2(mod.PLIC)$R2_marginal)))
+
+mod.ECLASS.std <- standardize_parameters(mod.ECLASS, ci = 0.67)
+mod.ECLASS.std$uncertainty <- abs(mod.ECLASS.std$Std_Coefficient - 
+                                    mod.ECLASS.std$CI_low)
+
+mod.PLIC.std <- standardize_parameters(mod.PLIC, ci = 0.67)
+mod.PLIC.std$uncertainty <- abs(mod.PLIC.std$Std_Coefficient - 
+                                    mod.PLIC.std$CI_low)
+```
+
+#### Output stargazer
+```{r, include = FALSE}
+labels = c("Pretest", "Mixed", "Skills-based", "Non-binary", "Unknown", "Woman",
+            "American Indian", "Native Hawaiian", "Other", "Black", "Hispanic",
+            "Asian", "White", "LifeSci/Chem", "Engineering", "Math/CS",
+            "Non-science", "Other", "Other science", "Undeclared", "Unknown",
+            "Unknown race", "Mixed * Non-binary", "Skills-based * Non-binary",
+            "Mixed * Unknown", "Skills-based * Unknown", "Mixed * Woman",
+            "Skills-based * Woman", "Mixed * American Indian",
+            "Skills-based * American Indian", "Mixed * Native Hawaiian",
+            "Skills-based * Native Hawaiian", "Mixed * Other",
+            "Skills-based * Other", "Mixed * Black", "Skills-based * Black",
+            "Mixed * Hispanic", "Skills-based * Hispanic", "Mixed * Asian",
+            "Skills-based * Asian", "Mixed * White", "Skills-based * White",
+            "Mixed * Unknown race", "Skills-based * Unknown race", "Constant")
+
+ECLASS.std.coefs <- mod.ECLASS.std$Std_Coefficient
+ECLASS.std.delta <- mod.ECLASS.std$uncertainty
+names(ECLASS.std.coefs) <- names(summary(mod.ECLASS)$coefficients[, 1])
+names(ECLASS.std.delta) <- names(summary(mod.ECLASS)$coefficients[, 2])
+
+PLIC.std.coefs <- mod.PLIC.std$Std_Coefficient
+PLIC.std.delta <- mod.PLIC.std$uncertainty
+names(PLIC.std.coefs) <- names(summary(mod.PLIC)$coefficients[, 1])
+names(PLIC.std.delta) <- names(summary(mod.PLIC)$coefficients[, 2])
+
+class(mod.ECLASS) <- "lmerMod"
+class(mod.PLIC) <- "lmerMod"
+
+out <- stargazer(mod.ECLASS, mod.ECLASS, mod.ECLASS, mod.ECLASS, mod.PLIC, 
+                 mod.PLIC, mod.PLIC, mod.PLIC, 
+                 coef = list(summary(mod.ECLASS)$coefficients[, 1],
+                             summary(mod.ECLASS)$coefficients[, 2], 
+                             ECLASS.std.coefs, ECLASS.std.delta,
+                             summary(mod.PLIC)$coefficients[, 1],
+                             summary(mod.PLIC)$coefficients[, 2], 
+                             PLIC.std.coefs, PLIC.std.delta),
+                 se = list(summary(mod.ECLASS)$coefficients[, 2], NA, 
+                           ECLASS.std.delta, NA, 
+                           summary(mod.PLIC)$coefficients[, 2], NA, 
+                           PLIC.std.delta, NA), type = 'latex', 
+                 intercept.bottom = TRUE, style = 'asr', 
+                 column.labels = c('Beta', 'SE', 'Beta.std', 'SE', 'Beta', 'SE', 
+                                   'Beta.std', 'SE'), model.numbers = FALSE,
+                 covariate.labels = labels, 
+                 dep.var.labels = 'E-CLASS posttest scores',
+                 out = 'LabType_Model.tex')
+```
+
+#### Marginal effects plots
+```{r}
+theme_set(theme_classic(base_size = 14)) # set font size for ggplot
+get_legend <- function(myggplot){
+  # from http://www.sthda.com/english/wiki/wiki.php?id_contents=7930
+  tmp <- ggplot_gtable(ggplot_build(myggplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+
+marginal.plots <- function(mod, assessment, y.low, y.high, keep.legend = FALSE, 
+                           labs = TRUE){
+  theme.margEff <- theme(axis.text.x = element_text(angle = 40, vjust = 1, 
+                                                    hjust = 1), 
+                         axis.ticks.y = element_blank(),
+                         axis.text.y = element_blank())
+  margins <- unit(c(0, 0, 0, 0), 'cm')
+  
+  # marginal effects (average effect) of different labs on posttest scores
+  pred.labs <- data.frame(ggeffect(mod, "Lab.type", ci.lvl = 0.67))
+  
+  p1 <- ggplot(pred.labs, aes(x = factor(x), y = predicted, color = factor(x))) +
+    geom_point(size = 2) +
+    geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size = 1, width = 0,
+                  position = position_dodge(width = 0.5)) +
+    scale_x_discrete(labels = c('Concepts-based', 'Mixed', 'Skills-based')) +
+    scale_color_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
+    ylab(paste('Expected ', assessment, '\nposttest scores', sep = '')) +
+    theme(axis.text.x = element_text(angle = 40, vjust = 1, hjust = 1),
+          legend.position = 'none',
+          plot.margin = margins) +
+    ylim(y.low, y.high)
+  
+  # average over lab type and gender
+  pred.labs.gender <- data.frame(ggeffect(mod, c("Gender", "Lab.type"), 
+                                          ci.lvl = 0.67))
+  
+  p2 <- ggplot(pred.labs.gender, aes(x = factor(x), y = predicted, 
+                                     color = group)) +
+    geom_point(size = 2, position = position_dodge(width = 0.5)) +
+    geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size = 1, width = 0,
+                  position = position_dodge(width = 0.5)) +
+    scale_color_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
+    scale_x_discrete(limits = c("Man", "Non-binary", "Woman", "Unknown")) +
+    labs(y = '', color = 'Lab type') +
+    theme.margEff +
+    theme(plot.margin = margins)
+    ylim(y.low, y.high)
+  
+  if(keep.legend){
+    p2 <- p2 +
+      theme(legend.position = 'top')
+    
+    leg <- get_legend(p2)
+  }
+  p2 <- p2 +
+    theme(legend.position = 'none')
+  
+  # average over lab type and race/ethnicity...since race/ethnicity variables are
+  # not independent, we calculate marginal effects separately for each variable...
+  race.cols <- 
+    names(summary(mod)$coefficients[, 1])[names(summary(mod)$coefficients[, 1])
+                                          %like% '^Race']
+  preds.labs.race <- data.frame(ggeffect(mod, c(race.cols[1], "Lab.type"), 
+                                         ci.lvl = 0.67))
+  
+  
+  preds.labs.race <- preds.labs.race %>%
+    filter(x == 1) %>%
+    mutate(x = race.cols[1])
+  for(race in c(race.cols[2:length(race.cols)])){
+    temp.data <- data.frame(ggeffect(mod, c(race, 'Lab.type'), ci.lvl = 0.67))
+    # ...bind results in one dataframe...
+    preds.labs.race <- rbind(preds.labs.race, temp.data %>% 
+                               filter(x == 1) %>%
+                               mutate(x = race))
+  }
+  
+  # ...and clean up the dataframe a little bit
+  preds.labs.race$race.ethnicity <-
+    sapply(strsplit(as.character(preds.labs.race$x), "\\."), "[[", 3)
+  
+  preds.labs.race <- preds.labs.race %>%
+    mutate(group = factor(group, levels = c('Concepts-based', 'Mixed', 
+                                            'Skills-based'),
+                          ordered = TRUE),
+           race.ethnicity = case_when(
+             race.ethnicity == 'AmInd' ~ 'American Indian',
+             race.ethnicity == 'NatHawaii' ~ 'Native Hawaiian',
+             race.ethnicity == 'unknown' ~ 'Unknown',
+             TRUE ~ race.ethnicity))
+  
+  p3 <- ggplot(preds.labs.race, aes(x = factor(race.ethnicity, 
+                                               levels = c('American Indian', 
+                                                          'Asian', 'Black', 
+                                                          'Hispanic', 
+                                                          'Native Hawaiian', 
+                                                          'White', 'Other', 
+                                                          'Unknown')), 
+                                    y = predicted, group = group, color = group)) +
+    geom_point(size = 2, position = position_dodge(width = 0.5)) +
+    geom_errorbar(aes(ymin = conf.low, ymax = conf.high), size = 1, width = 0.2,
+                  position = position_dodge(width = 0.5)) +
+    scale_color_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
+    ylab('') +
+    theme.margEff +
+    theme(legend.position = 'none',
+          plot.margin = margins) +
+    ylim(y.low, y.high)
+  
+  if(labs){
+    p1 <- p1 +
+      xlab('Lab type')
+    p2 <- p2 +
+      xlab('Gender')
+    p3 <- p3 +
+      xlab('Race/ethnicity') 
+  } else {
+    p1 <- p1 +
+      xlab('')
+    p2 <- p2 +
+      xlab('')
+    p3 <- p3 +
+      xlab('')
+  }
+  
+  if(keep.legend){
+    return(list(p1, p2, p3, leg))
+  }
+  return(list(p1, p2, p3))
+}
+```
+
+##### Combined figure
+```{r}
+plots.ECLASS <- marginal.plots(mod.ECLASS, 'E-CLASS', 11.5, 19, 
+                               keep.legend = TRUE, labs = FALSE)
+plots.PLIC <- marginal.plots(mod.PLIC, 'PLIC', 4.25, 6.25, keep.legend = FALSE)
+
+pdf('Figures/Labtype_Demos.pdf', width = 7, height = 7, onefile = FALSE)
+grobs.ECLASS = cbind(ggplotGrob(plots.ECLASS[1][[1]]),
+                     ggplotGrob(plots.ECLASS[2][[1]]),
+                     ggplotGrob(plots.ECLASS[3][[1]]), size = "first")
+grobs.PLIC = cbind(ggplotGrob(plots.PLIC[1][[1]]), ggplotGrob(plots.PLIC[2][[1]]),
+                     ggplotGrob(plots.PLIC[3][[1]]), size = "first")
+grid.arrange(plots.ECLASS[4][[1]], arrangeGrob(grobs.ECLASS),
+             arrangeGrob(grobs.PLIC), heights = c(1, 10, 10))
+dev.off()
+```
+
+##### Expected differences in marginal effects
+```{r}
+std.diff.margEff <- function(v1, v2, se1, se2){
+  diff <- (v2 - v1)
+  se <- sqrt((se1 ^ 2) + (se2 ^ 2))
+  return(list(diff, se))
+}
+
+margEff.diff.labType <- function(mod, norm.factor){
+  df <- data.frame(ggeffect(mod, "Lab.type", ci.lvl = 0.67))
+  
+  pred.concepts <- df[df$x == 'Concepts-based', 'predicted']/norm.factor
+  se.concepts <- df[df$x == 'Concepts-based', 'std.error']/norm.factor
+  
+  pred.skills <- df[df$x == 'Skills-based', 'predicted']/norm.factor
+  se.skills <- df[df$x == 'Skills-based', 'std.error']/norm.factor
+  
+  preds.diff <- std.diff.margEff(pred.concepts, pred.skills, se.concepts, 
+                                 se.skills)
+  return(preds.diff)
+}
+
+diffs.ECLASS <- margEff.diff.labType(mod.ECLASS, 
+                                     sd(df.ECLASS.matched[, 'PostScores']))
+diffs.PLIC <- margEff.diff.labType(mod.PLIC, sd(df.PLIC.matched[, 'PostScores']))
+
+print(paste('Difference in standardized marginal effects of lab type (E-CLASS): ',
+            diffs.ECLASS[[1]], ' +- ', diffs.ECLASS[[2]], sep = ''))
+print(paste('Difference in standardized marginal effects of lab type (PLIC): ',
+            diffs.PLIC[[1]], ' +- ', diffs.PLIC[[2]], sep = ''))
+```
+
+#### Variance inflation factors and model diagnostics
+```{r}
+vif(mod.ECLASS)
+plot(mod.ECLASS, xlab = 'Fitted values', ylab = 'Residuals')
+qqmath(mod.ECLASS)
+
+vif(mod.PLIC)
+plot(mod.PLIC, xlab = 'Fitted values', ylab = 'Residuals')
+qqmath(mod.PLIC)
+```
+
+## Effect of pedagogical variables
+
+### Get unique courses
+```{r}
+df.CIS <- 
+  df.matched[!duplicated(df.matched[, names(df.matched)[names(df.matched) 
+                                                        %like% "Q28|Q29|Q31|Q32|Q33|institution_id"]]),]
+```
+
+### CFA
+
+#### Number 1
+```{r}
+mod.cfa <- '
+  agency =~ Q29_1 + Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q31_6
+  modeling =~ Q31_1 + Q31_2 + Q31_3 + Q31_4 + Q31_5
+  communication =~ Q33_1 + Q33_2 + Q33_3 + Q33_4
+'
+
+fit.cfa <- sem(mod.cfa, data = df.CIS)
+summary(fit.cfa, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+standardizedsolution(fit.cfa)
+colSums(1 * (abs(resid(fit.cfa, type = 'cor')$cov) > 0.2))
+resid(fit.cfa, type = 'cor')$cov
+```
+
+#### Number 2
+```{r}
+mod.cfa <- '
+  agency =~ Q29_2 + Q29_3 + Q29_4 + Q29_5 + Q31_6
+  modeling =~ Q31_1 + Q31_2 + Q31_3 + Q31_4 + Q31_5
+  communication =~ Q33_1 + Q33_2 + Q33_3
+  
+  Q31_1 ~~ Q31_2 + Q31_3
+  Q31_4 ~~ Q31_3 + Q31_2
+'
+
+fit.cfa <- sem(mod.cfa, data = df.CIS)
+summary(fit.cfa, standardized = TRUE, fit.measures = TRUE, modindices = TRUE)
+standardizedsolution(fit.cfa, type = 'std.lv')
+colSums(1 * (abs(resid(fit.cfa, type = 'cor')$cov) > 0.15))
+resid(fit.cfa, type = 'cor')$cov
+```
+
+### Differences in pedagogical variables across different labs
+```{r}
+factorScores <- lavPredict(fit.cfa, df.CIS, method = 'regression')
+df.CIS.scored <- cbind(na.omit(df.CIS), factorScores) %>%
+  mutate(agency = agency/sd(agency),
+         modeling = modeling/sd(modeling),
+         communication = communication/sd(communication))
+
+df.CIS.scored %>%
+  group_by(Lab.type) %>%
+  summarize(avg.agency = mean(agency), avg.modeling = mean(modeling), 
+            avg.comm = mean(communication), se.agency = sd(agency)/sqrt(n()), 
+            se.modeling = sd(modeling)/sqrt(n()), 
+            se.comm = sd(communication)/sqrt(n()))
+
+agency.t <- t.test(agency ~ Lab.type, df.CIS.scored %>% 
+                     filter(Lab.type != 'Mixed'), conf.level = 0.67)
+modeling.t <- t.test(modeling ~ Lab.type, df.CIS.scored %>% 
+                       filter(Lab.type != 'Mixed'), conf.level = 0.67)
+comm.t <- t.test(communication ~ Lab.type, df.CIS.scored %>% 
+                   filter(Lab.type != 'Mixed'), conf.level = 0.67)
+
+fs.diffs <- data.frame(Variable = c('Agency', 'Modeling', 'Communication'),
+                       Mean.diff = c(diff(agency.t$estimate),
+                                     diff(modeling.t$estimate), 
+                                     diff(comm.t$estimate)), 
+                       std.error = c(agency.t$stderr, modeling.t$stderr, 
+                                     comm.t$stderr))
+fs.diffs
+
+theme_set(theme_classic(base_size = 14))
+p.agency <- ggplot(df.CIS.scored, aes(x = agency, fill = Lab.type)) +
+  geom_density(alpha = 0.6, position = 'identity', adjust = 2) +
+  labs(x = 'Agency', y = 'Fraction of labs', fill = 'Lab type') +
+  scale_fill_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
+  theme(legend.position = 'none') +
+  ylim(0, 0.6)
+
+p.modeling <- ggplot(df.CIS.scored, aes(x = modeling, fill = Lab.type)) +
+  geom_density(alpha = 0.6, position = 'identity', adjust = 2) +
+  labs(x = 'Modeling', y = '', fill = 'Lab type') +
+  scale_fill_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
+  theme(legend.position = 'top') +
+  ylim(0, 0.6) +
+  theme(axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+leg.labs <- get_legend(p.modeling)
+p.modeling <- p.modeling + theme(legend.position = 'none')
+
+p.communication <- ggplot(df.CIS.scored, aes(x = communication, fill = Lab.type)) +
+  geom_density(alpha = 0.6, position = 'identity', adjust = 2) +
+  labs(x = 'Communication', y = '', fill = 'Lab type') +
+  scale_fill_manual(values = c('#e69f00', '#009e74', '#0071b2')) +
+  theme(legend.position = 'none') +
+  ylim(0, 0.6) +
+  theme(axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+pdf('Figures/Lab_Pedagogy_LabType.pdf', width = 7, height = 3)
+grobs = cbind(ggplotGrob(p.agency), ggplotGrob(p.modeling), 
+              ggplotGrob(p.communication), size = "first")
+grid.arrange(leg.labs, arrangeGrob(grobs), heights = c(1, 10))
+dev.off()
+
+cor(df.CIS.scored[, c('agency', 'modeling', 'communication')])
+```
+
+### Effect of pedagogical variables on outcomes
+
+#### Setup
+```{r}
+standardize.vars <- function(df){
+  # standardize variables at the class level
+  means <- df[!duplicated(df$Class_ID), c('agency', 'modeling', 
+                                          'communication')] %>%
+  summarize_all(mean)
+  sds <- df[!duplicated(df$Class_ID), c('agency', 'modeling', 'communication')] %>%
+    summarize_all(sd)
+  
+  df <- df %>%
+    mutate(agency = (agency - means$agency)/sds$agency,
+           modeling = (modeling - means$modeling)/sds$modeling,
+           communication = (communication - means$communication)/sds$communication)
+
+  return(df)
+}
+
+pedagogy.formula <- as.formula('PostScores ~ PreScores + Gender + 
+                                Race.ethnicity.AmInd + Race.ethnicity.NatHawaii +
+                                Race.ethnicity.Other + Race.ethnicity.Black +
+                                Race.ethnicity.Hispanic + Race.ethnicity.Asian + 
+                                Race.ethnicity.White + Major + modeling +
+                                (1 | anon_institution_id/Class_ID)')
+
+output.stargazer <- function(mod.agency, mod.communication, mod.agency.std, 
+                             mod.communication.std, outFile, labels = NULL, 
+                             Assessment){
+  
+  agency.std.coefs <- mod.agency.std$Std_Coefficient
+  agency.std.delta <- mod.agency.std$uncertainty
+  names(agency.std.coefs) <- names(summary(mod.agency)$coefficients[, 1])
+  names(agency.std.delta) <- names(summary(mod.agency)$coefficients[, 2])
+
+  communication.std.coefs <- mod.communication.std$Std_Coefficient
+  communication.std.delta <- mod.communication.std$uncertainty
+  names(communication.std.coefs) <-
+    names(summary(mod.communication)$coefficients[, 1])
+  names(communication.std.delta) <- 
+    names(summary(mod.communication)$coefficients[, 2])
+  
+  class(mod.agency) <- "lmerMod"
+  class(mod.communication) <- "lmerMod"
+  
+  out <- stargazer(mod.agency, mod.agency, mod.agency, mod.agency,
+                   mod.communication, mod.communication, mod.communication, 
+                   mod.communication, 
+                 coef = list(summary(mod.agency)$coefficients[, 1],
+                             summary(mod.agency)$coefficients[, 2], 
+                             agency.std.coefs, agency.std.delta,
+                             summary(mod.communication)$coefficients[, 1],
+                             summary(mod.communication)$coefficients[, 2], 
+                             communication.std.coefs, communication.std.delta),
+                 se = list(summary(mod.agency)$coefficients[, 2], NA, 
+                           agency.std.delta, NA, 
+                           summary(mod.communication)$coefficients[, 2], NA, 
+                           communication.std.delta, NA), type = 'latex', 
+                 intercept.bottom = TRUE, style = 'asr', 
+                 column.labels = c('Beta', 'SE', 'Beta.std', 'SE', 'Beta', 'SE', 
+                                   'Beta.std', 'SE'), model.numbers = FALSE,
+                 covariate.labels = labels, 
+                 dep.var.labels = paste(Assessment, 'posttest scores', sep = ''),
+                 out = outFile)
+  return(0)
+}
+```
+
+#### E-CLASS
+```{r, include = FALSE}
+df.ECLASS.matched.factors <- 
+  cbind(df.ECLASS.matched, data.frame(lavPredict(fit.cfa, df.ECLASS.matched,
+                                                 method = 'regression'))) %>%
+  standardize.vars(.)
+
+
+mod.ECLASS.agency <- lmer(update(pedagogy.formula, ~. + Race.ethnicity.unknown +
+                                   agency), df.ECLASS.matched.factors)
+mod.ECLASS.communication <- lmer(update(pedagogy.formula, ~. +
+                                          Race.ethnicity.unknown + communication),
+                                 df.ECLASS.matched.factors)
+
+mod.ECLASS.agency.std <- standardize_parameters(mod.ECLASS.agency, ci = 0.67)
+mod.ECLASS.agency.std$uncertainty <- abs(mod.ECLASS.agency.std$Std_Coefficient - 
+                                           mod.ECLASS.agency.std$CI_low)
+mod.ECLASS.communication.std <- standardize_parameters(mod.ECLASS.communication, 
+                                                       ci = 0.67)
+mod.ECLASS.communication.std$uncertainty <- 
+  abs(mod.ECLASS.communication.std$Std_Coefficient - 
+        mod.ECLASS.communication.std$CI_low)
+
+labels = c("Pretest", "Non-binary", "Unknown", "Woman", "American Indian", 
+            "Native Hawaiian", "Other", "Black", "Hispanic", "Asian", "White",
+            "LifeSci/Chem", "Engineering", "Math/CS", "Non-science", 
+            "Other science", "Undeclared", "Unknown", "Modeling", "Unknown race", 
+            "Agency", "Communication", "Constant")
+
+out <- output.stargazer(mod.ECLASS.agency, mod.ECLASS.communication, 
+                        mod.ECLASS.agency.std, mod.ECLASS.communication.std, 
+                        outFile = 'Pedagogy_ECLASS_Model.tex', labels = labels,
+                        Assessment = 'E-CLASS')
+
+print(paste('E-CLASS (agency) marginal R2:', 
+            as.numeric(r2(mod.ECLASS.agency)$R2_marginal)))
+print(paste('E-CLASS (agency) conditional R2:', 
+            as.numeric(r2(mod.ECLASS.agency)$R2_conditional)))
+
+print(paste('E-CLASS (communication) marginal R2:', 
+            as.numeric(r2(mod.ECLASS.communication)$R2_marginal)))
+print(paste('E-CLASS (communication) conditional R2:', 
+            as.numeric(r2(mod.ECLASS.communication)$R2_conditional)))
+```
+
+#### PLIC
+```{r, include = FALSE}
+# some classes with missing CIS info that we remove
+df.PLIC.matched <- df.PLIC.matched[complete.cases(df.PLIC.matched),]
+summary.datasets(df.PLIC.matched, df.PLIC.matched, df.PLIC.matched)[3,]
+
+df.PLIC.matched.factors <- 
+  cbind(df.PLIC.matched, data.frame(lavPredict(fit.cfa, df.PLIC.matched,
+                                               method = 'regression'))) %>%
+  standardize.vars(.)
+
+
+mod.PLIC.agency <- lmer(update(pedagogy.formula, ~. + agency),
+                        df.PLIC.matched.factors)
+mod.PLIC.communication <- lmer(update(pedagogy.formula, ~. + communication),
+                               df.PLIC.matched.factors)
+
+mod.PLIC.agency.std <- standardize_parameters(mod.PLIC.agency, ci = 0.67)
+mod.PLIC.agency.std$uncertainty <- abs(mod.PLIC.agency.std$Std_Coefficient - 
+                                         mod.PLIC.agency.std$CI_low)
+mod.PLIC.communication.std <- standardize_parameters(mod.PLIC.communication, 
+                                                     ci = 0.67)
+mod.PLIC.communication.std$uncertainty <- 
+  abs(mod.PLIC.communication.std$Std_Coefficient - 
+        mod.PLIC.communication.std$CI_low)
+
+labels = c("Pretest", "Non-binary", "Unknown", "Woman", "American Indian", 
+           "Native Hawaiian", "Other", "Black", "Hispanic", "Asian", "White",
+           "Engineering", "Other", "Other science", "Unknown", "Modeling",
+           "Agency", "Communication", "Constant")
+
+out <- output.stargazer(mod.PLIC.agency, mod.PLIC.communication, 
+                        mod.PLIC.agency.std, mod.PLIC.communication.std, 
+                        outFile = 'Pedagogy_PLIC_Model.tex', labels = labels, 
+                        Assessment = 'PLIC')
+
+print(paste('PLIC (agency) marginal R2:', 
+            as.numeric(r2(mod.PLIC.agency)$R2_marginal)))
+print(paste('PLIC (agency) conditional R2:', 
+            as.numeric(r2(mod.PLIC.agency)$R2_conditional)))
+
+print(paste('PLIC (communication) marginal R2:', 
+            as.numeric(r2(mod.PLIC.communication)$R2_marginal)))
+print(paste('PLIC (communication) conditional R2:', 
+            as.numeric(r2(mod.PLIC.communication)$R2_conditional)))
+```
+
+#### Marginal effects plot
+```{r}
+margEff.plot.pedagogy <- function(mod.agency, mod.communication, 
+                                  Assessment, keep.legend = FALSE){
+  # average over lab type and gender
+  pred.labs.pedagogy <- rbind(data.frame(ggeffect(mod.agency, "agency [-2:2]", 
+                                                  ci.lvl = 0.67)) %>%
+                                mutate(group = 'agency'), 
+                              data.frame(ggeffect(mod.agency, "modeling [-2:2]", 
+                                                  ci.lvl = 0.67)) %>%
+                                mutate(group = 'modeling'),
+                              data.frame(ggeffect(mod.communication, 
+                                                  "communication [-2:2]", 
+                                                  ci.lvl = 0.67)) %>%
+                                mutate(group = 'communication'))
+  pred.labs.pedagogy$group <- str_to_title(pred.labs.pedagogy$group)
+  pred.labs.pedagogy$group <- factor(pred.labs.pedagogy$group, 
+                                     levels = c('Agency', 'Modeling', 
+                                                'Communication'))
+  
+  theme_set(theme_classic(base_size = 16))
+  p <- ggplot(pred.labs.pedagogy, aes(x = x, y = predicted, color = group)) +
+    geom_line(size = 1) +
+    geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+                linetype = 2, alpha = 0.1) +
+    labs(x = 'Standardized variable', 
+         y = paste('Expected ', Assessment, '\nposttest scores', sep = ''), 
+         fill = 'Pedagogical variable', color = 'Pedagogical variable') +
+  scale_color_manual(values = c('#9F0162', '#00C2F9', '#FF6E3A')) +
+  scale_fill_manual(values = c('#9F0162', '#00C2F9', '#FF6E3A')) +
+  theme(legend.position = 'top') +
+  guides(fill = guide_legend(title.position = 'top', title.hjust = 0.5), 
+         color = guide_legend(title.position = 'top', title.hjust = 0.5))
+
+  if(keep.legend){
+    leg <- get_legend(p)
+    p <- p + theme(legend.position = 'none')
+    return(list(p, leg))
+  } else {
+    p <- p + theme(legend.position = 'none')
+    return(p)
+  }
+}
+
+plot.ECLASS.pedagogy <- margEff.plot.pedagogy(mod.ECLASS.agency, 
+                                              mod.ECLASS.communication, 'E-CLASS', 
+                                              TRUE)
+plot.PLIC.pedagogy <- margEff.plot.pedagogy(mod.PLIC.agency, 
+                                            mod.PLIC.communication, 'PLIC', FALSE)
+pdf('Figures/Lab_Pedagogy_Effect.pdf', width = 7, height = 4)
+grobs = cbind(ggplotGrob(plot.ECLASS.pedagogy[1][[1]]), 
+              ggplotGrob(plot.PLIC.pedagogy), size = "first")
+grid.arrange(plot.ECLASS.pedagogy[2][[1]], arrangeGrob(grobs), heights = c(2, 10))
+dev.off()
+```
+
+##### Fraction of marginal effect of lab type
+```{r}
+expected.fracEffect <- function(std.agency, std.communication, fs.diffs, 
+                                lab.effect, lab.effect.se){
+  df.agency <- data.frame(std.agency) %>%
+    filter(Parameter %in% c('agency', 'modeling'))
+  df.communication <- data.frame(std.communication) %>%
+    filter(Parameter == 'communication')
+  df.effects <- rbind(df.agency, df.communication) %>%
+    select(Parameter, Std_Coefficient, uncertainty) %>%
+    mutate(Parameter = str_to_title(Parameter))
+  df.effects <- df.effects[order(match(df.effects$Parameter, fs.diffs$Variable)),]
+  
+  df.effects$avg.diff <- df.effects$Std_Coefficient * fs.diffs$Mean.diff
+  df.effects$diff.unc <- sqrt((df.effects$uncertainty/
+                                 df.effects$Std_Coefficient) ^ 2 +
+                                (fs.diffs$std.error/fs.diffs$Mean.diff)^2) * 
+    df.effects$avg.diff
+  
+  df.effects$frac.effect <- df.effects$avg.diff/lab.effect
+  df.effects$frac.effect.se <- sqrt((df.effects$diff.unc/
+                                       df.effects$avg.diff) ^ 2 + 
+                                      (lab.effect.se/lab.effect) ^ 2) * 
+    df.effects$frac.effect
+  
+  return(df.effects)
+}
+
+expected.fracEffect(mod.ECLASS.agency.std, mod.ECLASS.communication.std, fs.diffs,
+                    diffs.ECLASS[[1]], diffs.ECLASS[[2]])
+expected.fracEffect(mod.PLIC.agency.std, mod.PLIC.communication.std, fs.diffs, 
+                    diffs.PLIC[[1]], diffs.PLIC[[2]])
+```
+

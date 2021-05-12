@@ -1,0 +1,139 @@
+# Setup
+
+## Load necessary packages
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+library(plyr)
+library(readr)
+library(tidyverse)
+library(DescTools)
+library(ryouready)
+library(reshape2)
+library(stringr)
+library(ggthemes)
+library(cluster)
+library(factoextra)
+library(DescTools)
+theme_set(theme_classic(base_size = 10))
+```
+
+
+## Load data and overview
+```{r, echo = FALSE}
+info <- data.frame(lapply(read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/PLIC_May2019.csv', 
+                                   nrows = 1, encoding = 'UTF-8'), 
+                          FUN = function(x) gsub("^.*-", "", x)))
+
+full.df <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Collective_Surveys/Complete/Complete_Concat_CourseInfo.csv') %>%
+  filter(Survey_x == 'C' | Survey_y == 'C') %>% # remove events with no CR surveys
+  # remove pre-pandemic data
+  mutate(V4_x = as.Date(V4_x),
+         V4_y = as.Date(V4_y)) %>%
+  filter(V4_y < as.Date('2020-01-01') | (is.na(V4_y) & 
+                                           V4_x < as.Date('2020-01-01')))
+
+pre.df <- full.df %>%
+  filter(Survey_x == 'C')
+
+experts.df <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Experts/OriginalExperts_Scored.csv')
+
+print('Number of pretest survey responses:')
+nrow(pre.df)
+print('Number of courses in pretest dataset:')
+length(unique(pre.df$anon_course_id))
+print('Number of classes in pretest dataset:')
+length(unique(pre.df$Class_ID))
+print('Number of institutions in pretest dataset:')
+length(unique(full.df$anon_institution_id))
+
+print('Number of experts:')
+nrow(experts.df)
+```
+
+I typically use class to refer to the same course in different semesters. So, PHYS 1116 is a course and PHYS 1116 in the fall and spring are two different classes for the same course.
+
+# Analysis
+
+## Question 1e what to do next
+```{r, echo = FALSE}
+pre.df_1e <- pre.df[, names(pre.df)[(names(pre.df) %like% '^Q1e_\\d*_x$')]]
+names(pre.df_1e) <- sub("_x", "", names(pre.df_1e))
+cols.1e <- names(pre.df_1e)
+pre.df_1e$Respondent <- 'Student'
+experts.df_1e <- experts.df[, names(experts.df)[(names(experts.df) %like% 
+                                                   '^Q1e_\\d*$')]]
+experts.df_1e$Respondent <- 'Expert'
+
+df.1e <- rbind(pre.df_1e, experts.df_1e) %>%
+  melt(., measure.vars = cols.1e) %>%
+  mutate(value = ifelse(value == 1, 1, 0))
+
+data.frame(t(info[, cols.1e]))
+
+ggplot(df.1e %>%
+         filter(value == 1), aes(x = variable, fill = variable)) +
+  geom_bar()  +
+  ggtitle('Group 1, what to do next') +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 30, hjust = 1)) +
+  facet_wrap(~Respondent, scales = 'free_y') +
+  geom_text(stat = 'count', aes(label = ..count..), vjust = -0.5, size = 2.5)
+```
+
+There's actually pretty good agreement, in general, between students and experts on next steps for Group 1. The lack of masses used really stands out to everybody.
+
+## Question 2e what do do next
+```{r, echo = FALSE}
+pre.df_2e <- pre.df[, names(pre.df)[(names(pre.df) %like% '^Q2e_\\d*_x$')]]
+names(pre.df_2e) <- sub("_x", "", names(pre.df_2e))
+cols.2e <- names(pre.df_2e)
+pre.df_2e$Respondent <- 'Student'
+experts.df_2e <- experts.df[, names(experts.df)[(names(experts.df) %like% 
+                                                   '^Q2e_\\d*$')]]
+experts.df_2e$Respondent <- 'Expert'
+
+df.2e <- rbind(pre.df_2e, experts.df_2e) %>%
+  melt(., measure.vars = cols.2e) %>%
+  mutate(value = ifelse(value == 1, 1, 0))
+
+data.frame(t(info[, cols.2e]))
+
+ggplot(df.2e %>%
+         filter(value == 1), aes(x = variable, fill = variable)) +
+  geom_bar()  +
+  ggtitle('Group 2, what to do next') +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 30, hjust = 1)) +
+  facet_wrap(~Respondent, scales = 'free_y') +
+  geom_text(stat = 'count', aes(label = ..count..), vjust = -0.5, size = 2.5)
+```
+
+One of these got cut off (I truncated at any hyphens)...so Q2e_34 is "Compare their k-value to the expected value"
+
+## Question 3, what to do next
+```{r, echo = FALSE}
+pre.df_3e <- pre.df[, names(pre.df)[(names(pre.df) %like% '^Q3e_\\d*_x$')]]
+names(pre.df_3e) <- sub("_x", "", names(pre.df_3e))
+cols.3e <- names(pre.df_3e)
+pre.df_3e$Respondent <- 'Student'
+experts.df_3e <- experts.df[, names(experts.df)[(names(experts.df) %like% 
+                                                   '^Q3e_\\d*$')]]
+experts.df_3e$Respondent <- 'Expert'
+df.3e <- rbind(pre.df_3e, experts.df_3e) %>%
+  melt(., measure.vars = cols.3e) %>%
+  mutate(value = ifelse(value == 1, 1, 0))
+
+data.frame(t(info[, cols.3e]))
+
+ggplot(df.3e %>%
+         filter(value == 1), aes(x = variable, fill = variable)) +
+  geom_bar()  +
+  ggtitle('Group 2, what to do next, part 2') +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 90, vjust = 0)) +
+  facet_wrap(~Respondent, scales = 'free_y') +
+  geom_text(stat = 'count', aes(label = ..count..), vjust = -0.5, size = 2.5)
+```
+
+Same thing happened here. Q3e_11 is "Design a new experiment to test the non-zero intercept" and Q3e_36 is "Compare their k-value to the expected value"
+
+I think the big takewaay, similar to the Eco-BLIC is that students favor taking more data (i.e., more trials overwhelmingly), but experts gravitate toward checking assumptions and systematic effects and, to a lesser extent, testing other variables.
