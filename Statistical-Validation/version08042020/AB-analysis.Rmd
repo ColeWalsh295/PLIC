@@ -2,12 +2,22 @@
 output:
   pdf_document: default
   html_document: default
+#title: 'AB Analysis'
+#runtime: shiny
 ---
-# Setup
 
-## Load necessary packages
-```{r, message = FALSE, warning = FALSE, echo = FALSE}
+```{r global_options, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+source('SLIC_AB_wrangling.R')
+df.students <- read.csv('AB_analysis_data.csv')
+```
+
+```{r, include = FALSE}
 library(plyr)
+library(MASS)
 library(readr)
 library(tidyverse)
 library(ryouready)
@@ -17,104 +27,102 @@ library(reshape2)
 library(ggstatsplot)
 library(MRCV)
 library(DescTools)
-source('C:/Users/Cole/Documents/GitHub/PLIC/Processing-Scripts/PLIC_DataProcessing.R')
+library(plotly)
+library(lmerTest)
+library(survival)
+library(survminer)
+library(gridExtra)
+library(ggpubr)
+source('PLIC_DataProcessing.R')
 theme_set(theme_classic(base_size = 12))
+palette.4 <- c('#9F0162', '#009F81', '#008DF9', '#FF6E3A')
+palette.4_2 <- c('#8400CD', '#FF5AAF', '#E20134', '#00C2F9')
+palette.2_1 <- c('#00C2F9', '#A40122')
+palette.2_2 <- c('#B400CD', '#FFC33B')
+palette.2_3 <- c('#E20134', '#008607')
 ```
 
-## Load and combine students' responses
-```{r, echo = FALSE}
-files = list.files("C:/Users/Cole/Documents/DATA/PLIC_DATA/SurveysNovember2020/", 
-                   recursive = TRUE, full.names = TRUE)
 
-read.classID.csv <- function(file){
-  # function to read file and assign class ID based on file name
-  df <- read.csv(file, header = T, skip = 1)
-  
-  if(nrow(df) > 0){
-    split.filename <- strsplit(file, '/')[[1]]
-    file.end <- split.filename[length(split.filename)]
-  
-    split.file.end <- strsplit(file.end, '_')[[1]]
-    class.ID <- split.file.end[length(split.file.end) - 1]
-    time <- split.file.end[length(split.file.end) - 3]
-  
-    df$Time <- time
-    df$Class.ID <- paste('R_', class.ID, sep = '')
-  }
+```{r, eval = FALSE}
+make.master.PLIC("C:/Users/Cole/Documents/DATA/PLIC_DATA/SurveysNovember2020/")
+```
+There are about 400 students in each of the four conditions, which is a good number. That should provide enough power for what we want to do.
 
-  return(df)
-}
-
-# header row with column names
-header = read.csv(files[1], header = F, nrows = 1, as.is = T)
-df.students = ldply(files, read.classID.csv) %>%
-  `colnames<-`(c(header, 'Time', 'Class.ID')) %>%
-  filter(V5 == 1) %>% # finished
-  filter((Qt1_3 > 30) | (Qt2_3 > 30) | (Qt3_3 > 30) | (Qt4_3 > 30)) #timing
-df.students <- df.students[df.students[, 'Unnamed: 7'] == 1,] # consent
-
+```{r}
+df.students <- read.csv('AB_analysis_data.csv')
 # text from rows beneath header
-info <- data.frame(lapply(read.csv(files[1], nrows = 1), 
+info <- data.frame(lapply(read.csv('PLIC_November2020.csv', nrows = 1), 
                           FUN = function(x) gsub("^.*- ", "", x)))
 
-# collapse gender/race/ethncity/major variables
-df.students <- Collapse.vars(df.students, matched = FALSE)
-
-# 4 conditions, 2x2; Likert means the student received Likert items on the first
-# three pages, None means they did not. 1/2 refers to which group the student saw 
-# first
 print('# of students by condition')
 table(df.students$Condition)
 
-print('# of unqiue classes')
+print('# of unique classes')
 length(unique(df.students$Class.ID))
-
-# merge CIS data
-CIS.df <- read.csv('C:/Users/Cole/Documents/DATA/PLIC_DATA/Course_Information_Survey_filled.csv')[-1,] %>%
-  select(V1, Q4, Q6, Q7, Q19, Q27) %>%
-  `colnames<-`(c('Class.ID', 'School', 'Course.Number', 'Course.Level', 
-                 'Institution.cat', 'Lab.type'))
-
-df.students <- merge(df.students, CIS.df, by = 'Class.ID', all.x = TRUE)
-
-print('# of unique courses')
-# rename a couple courses to be consistent
-df.students <- df.students %>%
-  mutate(Course.Number = case_when(
-    Course.Number == "PHY 121 Section 0001" | 
-      Course.Number == "PHY 121 Section 0002" ~ "PHY 121",
-    TRUE ~ Course.Number))
-length(unique(df.students$Course.Number))
 
 print('# of unique schools')
 length(unique(df.students$School))
-
-df.students <- df.students %>%
-  mutate(Class.standing = case_when(
-    Q6a == 1 ~ 'Freshman',
-    Q6a == 2 ~ 'Sophomore',
-    Q6a == 3 ~ 'Junior',
-    Q6a == 4 ~ 'Senior',
-    Q6a == 5 ~ 'Grad',
-    Q6a == 8 ~ 'Other',
-    TRUE ~ 'Unknown'
-  ),
-  Course.Level = case_when(
-    Course.Level == 6 ~ 'High School',
-    Course.Level == 1 ~ 'Intro (alebgra)',
-    Course.Level == 2 ~ 'Intro (calculus)',
-    Course.Level == 3 ~ 'Sophomore',
-    Course.Level == 4 ~ 'Junior',
-    Course.Level == 5 ~ 'Senior',
-    Course.Level == 7 ~ 'Graduate'
-  ))
 ```
-There are about 200 students in each of the four conditions, which is a good number. That should provide enough power for what we want to do.
+
+```{r}
+Likert.comparison.items <- list(list('Q139_1', 'Q2d_1', 'Q152_1', 
+                                     'Equipment used'),
+                                list('Q139_2', 'Q2d_2', 'Q152_2', 
+                                     'Variables measured'),
+                                list('Q139_3', 'Q2d_3', 'Q152_3', 
+                                     'Variables controlled'),
+                                list('Q140_1', 'Q142_1', 'Q153_1', 'N trials'),
+                                list('Q140_2', 'Q142_2', 'Q153_2', 'N masses'),
+                                list('Q140_3', 'Q142_3', 'Q153_3', 'N bounces'),
+                                list('Q141_1', 'Q157_1', 'Q154_1', 
+                                     'Explanations'),
+                                list('Q141_2', 'Q157_2', 'Q154_2', 'Analysis'),
+                                list('Q141_3', 'Q157_3', 'Q154_3', 
+                                     'Similar k values'),
+                                list('Q141_4', 'Q157_4', 'Q154_4', 
+                                     'Uncertainty in data'))
+
+df <- df.students %>%
+  mutate(Condition = case_when(
+    Condition %like% 'Likert' ~ 'Likert',
+    TRUE ~ 'No Likert'
+    ))
+
+quilt.plot(df, Likert.comparison.items, legend = TRUE, 
+           type = 'aggregate', palette = colorRampPalette(c('white', 'red')), 
+           scale = 'full', margin = c(2, 8, 0, 0))
+
+quilt.plot(df, Likert.comparison.items, Condition = 'Condition', legend = TRUE, 
+           type = 'hatched', palette = colorRampPalette(c('white', 'red')), 
+           panels = 'Comparison', panel.labels = "Comparison of the groups' methods", 
+           scale = 'full', margin = c(2, 8, 0, 0))
+
+quilt.plot(df, Likert.comparison.items, Condition = 'Condition', legend = TRUE, 
+           type = 'difference', palette = colorRampPalette(c('blue', 'white', 'red')), 
+           panels = 'Comparison', panel.labels = "Comparison of the groups' methods", 
+           scale = c(-0.25, 0.25), 
+           legend.extremes = c('Likert\nlarger', 'No Likert\nlarger'))
+
+quilt.plot(df, Likert.comparison.items, Condition = 'Condition', legend = TRUE, 
+           type = 'side-by-side', palette = colorRampPalette(c('white', 'red')), 
+           panels = 'Comparison', scale = 'full', margin = c(2, 8, 0, 0))
+
+
+quilt.plot(df.students %>%
+             filter(Condition %like% 'Likert') %>%
+             mutate(Condition = case_when(
+               Condition %like% '-1' ~ '1->2',
+               TRUE ~ '2->1'
+               )), Likert.comparison.items, Condition = 'Condition', legend = TRUE, 
+           type = 'hatched', palette = colorRampPalette(c('white', 'red')), 
+           panels = c('Group.1', 'Group.2', 'Comparison'), 
+           panel.labels = c("Characterization of\nGroup 1's methods", 
+                            "Characterization of\nGroup 2's methods", 
+                            "Comparison of the\ngroups' methods"), scale = 'full')
+```
 
 # Analysis
-
-## Check randomization
-```{r, message = FALSE, warning = FALSE}
+```{r, message = FALSE, warning = FALSE, eval = FALSE}
 print('Class standing X Condition')
 table(df.students$Class.standing, df.students$Condition)
 chisq.test(df.students$Class.standing, df.students$Condition)
@@ -145,57 +153,82 @@ chisq.test(df.students$Course.Level, df.students$Condition)
 ```
 Randomization looks to have done its job. There aren't any glaring cases of over/under-representations in any of the conditions. I think class standing/course level/major are the most important things to pay attention to here. I don't have any reasons to think students responses would vary by gender and or race/ethnicity and bias our results. But, regardless, the conditions are balanced along these lines as well.
 
-## Plots and chi-squared tests
+## Who did a better job?
+
+I start with the multiple choice summary item that asks respondents who they thought did a better job of testing the model?
+
+### All four conditions
 ```{r, warning = FALSE, message = FALSE, echo = FALSE}
-Questions <- c('Q4a', 'Q152_1',	'Q152_2', 'Q152_3',	'Q152_4', 'Q153_1', 'Q153_2', 'Q153_3', 'Q154_1', 'Q154_2', 'Q154_3', 'Q154_4', 'Q148')
-
-# need to recode questions, throughout Group 1 is synonymous with Team Panda and
-# Group 2 is synonymous with Team Ostrich
-df.students <- recode2(df.students, vars = Questions, 
-                       recodes = "1 = '1'; 2 = '2'; 3 = 'B'; 4 = 'N'")
-df.students <- recode2(df.students, vars = 'Q148', 
-                       recodes = "'1' = 'Methods'; '2' = 'Amt. of data'; 
-                       'B' = 'Analysis'; 'N' = 'Other'")
-
 df.students[, 'Q4a'] <- as.factor(df.students[, 'Q4a'])
-ggplot(filter(df.students, !is.na(Q4a)), aes(x = Q4a, fill = Condition, 
-                                             group = Condition)) +
+df.students <- recode2(df.students, vars = 'Q4a', 
+                       recodes = "1 = '1'; 2 = '2'; 3 = 'B'; 4 = 'N'")
+p <- ggplot(filter(df.students, !is.na(Q4a)), aes(x = Q4a, fill = Condition, 
+                                                  group = Condition)) +
     geom_bar(position = 'dodge', aes(y = ..prop..)) +
     labs(fill = 'Condition', x = 'Selection', y = 'Fraction of respondents') +
-    scale_fill_discrete(labels = c('V1.S', 'V2.S', 'V1.N', 'V2.N')) +
+    scale_fill_manual(labels = c('Group 1 first (Likert)', 
+                                   'Group 2 first (Likert)', 
+                                   'Group 1 first (No Likert)', 
+                                   'Group 2 first (No Likert)'), 
+                        values = palette.4) +
     scale_x_discrete(labels = c('Group 1', 'Group 2', 
                                 'Both were\nhighly effective', 
                                 'Both were\nminimally effective'))
-
-for(Q in Questions){
-  df.students[, Q] <- as.factor(df.students[, Q])
-  p <- ggplot(df.students, aes_string(x = Q, fill = 'Condition', 
-                               group = 'Condition')) +
-    geom_bar(position = 'dodge', aes(y = ..prop..)) +
-    labs(fill = 'Condition', x = 'Selection', y = 'Fraction of respondents') #+
-    scale_fill_discrete(labels = c('V1.S', 'V2.S', 'V1.N', 'V2.N')) #+
-    #scale_x_discrete(labels = c('Group 1', 'Group 2', 'Both the same'))
-  print(info[, Q])
-  print(p)
-  print(chisq.test(df.students$Condition, df.students[, Q]))
-}
+ggplotly(p)
 
 df.students <- df.students %>% 
   mutate(Likert = 1 * grepl('Likert', df.students$Condition),
          G2.First = 1 * grepl('2', df.students$Condition))
 ```
-Prefer not to examine all of these items individually because we'll run into multiple comparisons issues and troubles parsing all of this information, but I think it is worth looking at the first and last summary question (Q4a: Which group do you think did a better job? and Q148: What feature was most important for comparing the two teams?) We fail to reject the null hypothesis (at alpha = 0.05) that either distribution of selections differ by condition, but I think there are some trends in both, particularly in the effect of putting Group 2 first.
 
-For Q4a, more students look to pick Group 1 and less pick Group 2 when shown Group 2 first. Though less apparent, fewer students identify "Analysis" as being important when shown Group 2 first.
+```{r, eval = FALSE}
+chisq.test(df.students$Condition, df.students$Q4a)
+chisq.test(df.students$Likert, df.students$Q4a)
+chisq.test(df.students$G2.First, df.students$Q4a)
+```
 
-## Multinomial model of "Who did better?"
-```{r, echo = FALSE}
+Beginning with the summary item (Q4a: Which group do you think did a better job?), we fail to reject the null hypothesis (at alpha = 0.05) that the distribution of selections differ by condition. There are some trends: students are more likely to select the group they saw last as having done a better job. This effect isn't super big, obviously, and there's more on the effect size below.
+
+### Order/Likert
+
+Below, I look at the raw percentages by the Likert and ordering conditions separately without any modeling.
+```{r}
+p <- ggplot(filter(df.students, !is.na(Q4a)), aes(x = Q4a, 
+                                                  fill = factor(Likert))) +
+    geom_bar(position = 'dodge', aes(y = ..prop.., group = factor(Likert))) +
+    labs(fill = '', x = 'Selection', 
+         y = 'Fraction of respondents') +
+  scale_fill_manual(labels = c('No Likert', 'Likert'), values = palette.2_1) +
+  scale_x_discrete(labels = c('Group 1', 'Group 2', 'Both were\nhighly effective', 
+                              'Both were\nminimally effective'))
+p <- plotly_build(p)
+p$x$data[[1]]$name <- 'No Likert'
+p$x$data[[2]]$name <- 'Likert'
+ggplotly(p) %>% 
+  layout(legend = list(x = 0.9, y = 1, title = list(text = 'Likert items?')))
+
+p <- ggplot(filter(df.students, !is.na(Q4a)), aes(x = Q4a, 
+                                                  fill = factor(G2.First))) +
+    geom_bar(position = 'dodge', aes(y = ..prop.., group = factor(G2.First))) +
+    labs(fill = '', x = 'Selection', y = 'Fraction of respondents') +
+  scale_fill_manual(labels = c('1','2'), values = palette.2_2) +
+  scale_x_discrete(labels = c('Group 1', 'Group 2', 'Both were\nhighly effective', 
+                              'Both were\nminimally effective'))
+p <- plotly_build(p)
+p$x$data[[1]]$name <- '1'
+p$x$data[[2]]$name <- '2'
+ggplotly(p) %>% 
+  layout(legend = list(x = 0.9, y = 1, title = list(text = 'Group shown first')))
+```
+Likert items have essentially no effect. Group ordering has maybe an effect of 3-5 percentage points --- small anyway.
+
+### Multinomial model of "Who did better?"
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
 # we'll use 'Both' as the base level throughout because its neutral and more common
 # than 'Neither' increasing precision
 df.students$Q4a <- relevel(df.students$Q4a, ref = 'B')
 model <- multinom(Q4a ~ Likert + G2.First, df.students)
-summary(model)
-ggcoefstats(model, output = 'tidy') %>%
+p <- ggcoefstats(model, output = 'tidy', exponentiate = TRUE) %>%
   filter(!grepl('Intercept', term)) %>% # we don't care about the intercepts
   mutate(term = gsub('G2.First', 'Group 2 first', term),
          term = gsub('Likert', 'Scaffolding', term),
@@ -203,265 +236,948 @@ ggcoefstats(model, output = 'tidy') %>%
          term = gsub('_2', ' (Group 2/Both groups)', term),
          term = gsub('_1', ' (Group 1/Both groups)', term)) %>%
   arrange(desc(term)) %>%
-  ggcoefstats(.) +
-  labs(x = 'Estimated change in log odds', y = 'Effect', 
-       title = 'Which group did a better job?')
-
-dummy.df <- data.frame(Likert = c(0, 1, 0, 1), G2.First = c(0, 0, 1, 1))
-cbind(dummy.df, predict(model, type = 'probs', newdata = dummy.df)) %>%
-  mutate(Condition = case_when(
-    (Likert == 1) & (G2.First == 0) ~ 'Likert',
-    (Likert == 0) & (G2.First == 1) ~ 'Group 2 first',
-    (Likert == 1) & (G2.First == 1) ~ 'Likert/Group 2 first',
-    TRUE ~ 'No Likert/Group 1 first'
-  )) %>%
-  dplyr::select(-Likert, -G2.First) %>%
-  melt(., id.vars = 'Condition', variable.name = 'Selection',
-       value.name = 'Probability') %>%
-  ggplot(., aes(x = factor(Condition, levels = c('No Likert/Group 1 first', 
-                                                 'Likert', 'Group 2 first', 
-                                                 'Likert/Group 2 first')), 
-                           y = Probability, color = Selection)) +
-    geom_point(size = 4) +
-    labs(title = 'Predicted probability of selection by condition')
+  ggcoefstats(., vline = FALSE) +
+  labs(x = 'Change in odds ratio', y = 'Effect', 
+       title = 'Which group did a better job?') +
+  geom_vline(xintercept = 1, linetype = 'dashed')
+ggplotly(p)
 ```
-This multinomial illustrates these effects for Q4a. Showing the Likert items in the survey has little to no effect on students' responses to Q4a, but a greater proportion of students select Group 1 and N when shown Group 2 first. I think its easier to interpret the size of this effect by looking at the expected proportions because we had a 2x2 design. The fraction of students selecting Group 2 decreases from almost 0.5 to just below 0.4 when shown Group 2 first. The fraction selecting Group 1 conversely increases by almost 10 percentage points. These effects are considerably smaller for the Likert condition.
+This multinomial model illustrates the independent effects for Q4a. Showing the Likert items in the survey has little to no effect on students' responses to Q4a. Group ordering may have a small effect, with a greater proportion of students selecting "Group 1"" and "neither group" when shown Group 2 first. 
 
-## Multinomial model of "What was most important?"
-```{r, echo = FALSE}
-df.students$Q148 <- relevel(df.students$Q148, ref = 'Analysis')
-model <- multinom(Q148 ~ Likert + G2.First, df.students)
+We cannot reject that any of these coefficients are different from zero and that our observations couldn't haven't been produced by random chance with a high degree of certainty. At the very least, we can put a bound on the effect on group ordering --- with 95% confidence, the change in log odds of Group 1/Both groups is smaller than about 0.5.
 
-ggcoefstats(model, output = 'tidy') %>%
-  filter(!grepl('Intercept|Other', term)) %>% #...or the 'other' item
-  mutate(term = gsub('G2.First', 'Group 2 first', term),
-         term = gsub('_Amt. of data', ' (Amt. of data/Analysis)', term),
-         term = gsub('_Methods', ' (Methods/Analysis)', term)) %>%
-  arrange(desc(term)) %>%
-  ggcoefstats(., title = 'What criteria did you use? (Log odds ratios)')
+#### Group comparison questions
+```{r}
+Questions <- c('Q152_1',	'Q152_2', 'Q152_3',	'Q152_4', 'Q153_1', 'Q153_2', 
+               'Q153_3', 'Q154_1', 'Q154_2', 'Q154_3', 'Q154_4')
 
-dummy.df <- data.frame(Likert = c(0, 1, 0, 1), G2.First = c(0, 0, 1, 1))
-cbind(dummy.df, predict(model, type = 'probs', newdata = dummy.df)) %>%
-  mutate(Condition = case_when(
-    (Likert == 1) & (G2.First == 0) ~ 'Likert',
-    (Likert == 0) & (G2.First == 1) ~ 'Group 2 first',
-    (Likert == 1) & (G2.First == 1) ~ 'Likert/Group 2 first',
-    TRUE ~ 'No Likert/Group 1 first'
-  )) %>%
-  dplyr::select(-Likert, -G2.First) %>%
-  melt(., id.vars = 'Condition', variable.name = 'Selection',
-       value.name = 'Probability') %>%
-  ggplot(., aes(x = factor(Condition, levels = c('No Likert/Group 1 first', 
-                                                 'Likert', 'Group 2 first', 
-                                                 'Likert/Group 2 first')), 
-                           y = Probability, color = Selection)) +
-    geom_point(size = 4) +
-    labs(title = 'Predicted probability of selection by condition')
-```
-The effects for Q148 are smaller overall, but we again see that swapping the groups has a larger effect than including the Likert items, which is about zero.
+# need to recode questions, throughout Group 1 is synonymous with Team Panda and
+# Group 2 is synonymous with Team Ostrich
+df.comparison <- recode2(df.students, vars = Questions, 
+                       recodes = "1 = '1'; 2 = '2'; 3 = 'B'; 4 = 'N'") %>%
+  mutate(Condition = str_replace(Condition, '-', '_')) %>%
+  melt(., id.vars = 'Condition', measure.vars = Questions) %>%
+  group_by(Condition, variable, value) %>%
+  summarize(N = n()) %>%
+  data.table(.)
+df.comparison <- df.comparison[, Total := sum(N), 
+                       by = c('Condition', 'variable')][, Frac := N/Total] %>%
+  data.frame(.) %>%
+  select(Condition, variable, value, Frac) %>%
+  filter(!is.na(value))
+df.comparison <- dcast(df.comparison, variable + value ~ Condition, 
+                       value.var = 'Frac')
 
-## Other multinomial models
-```{r, echo = FALSE}
-model.df <- data.frame(y = character(), Item = character(), variable = character(),
-                       Coefficient = numeric(), Std.Error = numeric())
-for(Q in Questions[2:(length(Questions) - 1)]){
-  # we fit each of the 11 models separately
-  df.students[, Q] <- relevel(df.students[, Q], ref = 'B')
-  
-  mod <- multinom(as.formula(paste(Q, " ~ Likert + G2.First")), df.students)
-  
-  coefs <- data.frame(summary(mod)$coefficients) %>%
-    mutate(y = row.names(.),
-           Item = Q) %>%
-    melt(., id.vars = c('y', 'Item'), value.name = 'Coefficient')
-  
-  std.errors <- data.frame(summary(mod)$standard.errors) %>%
-    mutate(y = row.names(.),
-           Item = Q) %>%
-    melt(., id.vars = c('y', 'Item'), value.name = 'Std.Error')
-  
-  model.df <- rbind(model.df, inner_join(coefs, std.errors, by = c('y', 'Item', 
-                                                                   'variable')))
+fig <- plot_ly(df.comparison[df.comparison$variable == Questions[1],], 
+               type = 'bar', x = ~value, y = ~Likert_1, name = 'Likert-1', 
+               color = I(palette.4[1])) %>% 
+  add_trace(y = ~Likert_2, name = 'Likert-2', color = I(palette.4[2])) %>%
+  add_trace(y = ~None_1, name = 'None-1', color = I(palette.4[3])) %>%
+  add_trace(y = ~None_2, name = 'None-2', color = I(palette.4[4]))
+
+for(Q in Questions[-1]){
+  fig <- fig %>% add_trace(data = df.comparison[df.comparison$variable == Q,],
+                           y = ~Likert_1, name = 'Likert-1', 
+                           color = I(palette.4[1]), visible = FALSE) %>% 
+    add_trace(data = df.comparison[df.comparison$variable == Q,], y = ~Likert_2, 
+              name = 'Likert-2', color = I(palette.4[2]), visible = FALSE) %>% 
+    add_trace(data = df.comparison[df.comparison$variable == Q,], y = ~None_1, 
+              name = 'None-1', color = I(palette.4[3]), visible = FALSE) %>% 
+    add_trace(data = df.comparison[df.comparison$variable == Q,], y = ~None_2, 
+              name = 'None-2', color = I(palette.4[4]), visible = FALSE)
 }
 
-ggplot(model.df %>%
-         filter(variable != 'X.Intercept.'), aes(x = variable, y = Coefficient)) +
-  geom_violin() +
+fig <- fig %>%
+  layout(barmode = 'group',
+         xaxis = list(title = 'Selection'),
+         yaxis = list(title = 'Fraction of respondents'),
+         updatemenus = list(
+           list(
+             x = 0.75,
+             y = 1.1,
+             buttons = lapply(Questions, function(Q){
+               list(method = 'restyle',
+                    args = list('visible', df.comparison$variable == Q),
+                    label = strsplit(info[1, Q], ':')[[1]][1])
+             })
+           )
+         ))
+fig
+```
+
+## Likert items
+```{r}
+Questions <- c('Q139_1', 'Q139_2', 'Q139_3', 'Q140_1', 'Q140_2', 'Q140_3', 
+               'Q141_1', 'Q141_2', 'Q141_3',	'Q141_4', 'Q2d_1', 'Q2d_2', 
+               'Q2d_3', 'Q142_1', 'Q142_2', 'Q142_3', 'Q157_1', 'Q157_2', 
+               'Q157_3', 'Q157_4')
+
+df.Likert <- df.students %>%
+  mutate(Condition = str_replace(Condition, '-', '_')) %>%
+  filter(Condition == 'Likert_1' | Condition == 'Likert_2') %>%
+  melt(., id.vars = 'G2.First', measure.vars = Questions) %>%
+  group_by(G2.First, variable, value) %>%
+  summarize(N = n()) %>%
+  data.table(.)
+df.Likert <- df.Likert[, Total := sum(N), 
+                       by = c('G2.First', 'variable')][, Frac := N/Total] %>%
+  data.frame(.) %>%
+  select(G2.First, variable, value, Frac) %>%
+  filter(!is.na(value))
+df.Likert <- dcast(df.Likert, variable + value ~ G2.First, value.var = 'Frac')
+colnames(df.Likert) <- c('variable', 'value', 'Group_1', 'Group_2')
+
+fig <- plot_ly(df.Likert[df.Likert$variable == Questions[1],], 
+               type = 'bar', x = ~value, y = ~Group_1, name = 'Group 1 first', 
+               color = I(palette.2_2[1])) %>% 
+  add_trace(y = ~Group_2, name = 'Group 2 first', color = I(palette.2_2[2]))
+for(Q in Questions[-1]){
+  fig <- fig %>% add_trace(data = df.Likert[df.Likert$variable == Q,],
+                           y = ~Group_1, name = 'Group 1 first', 
+                           color = I(palette.2_2[1]), visible = FALSE) %>% 
+    add_trace(data = df.Likert[df.Likert$variable == Q,], y = ~Group_2, 
+              name = 'Group 2 first', color = I(palette.2_2[2]), visible = FALSE)
+}
+
+fig <- fig %>%
+  layout(barmode = 'group',
+         xaxis = list(title = 'Selection'),
+         yaxis = list(title = 'Fraction of respondents'),
+         updatemenus = list(
+           list(
+             x = 1.1,
+             y = 1.1,
+             buttons = lapply(Questions, function(Q){
+               list(method = 'restyle',
+                    args = list('visible', c(rbind(Questions == Q, 
+                                                   Questions == Q))),
+                    label = paste(ifelse(grepl('Q139|Q140|Q141', Q), 
+                                         'Group 1:', 'Group 2:'), 
+                                  strsplit(info[1, Q], ':')[[1]][1]))
+             })
+           )
+         ))
+fig
+```
+
+```{r}
+Likert.comparison.items <- list(list('Q139_1', 'Q2d_1', 'Q152_1', 
+                                     'Equipment used'),
+                                list('Q139_2', 'Q2d_2', 'Q152_2', 
+                                     'Variables measured'),
+                                list('Q139_3', 'Q2d_3', 'Q152_3', 
+                                     'Variables controlled'),
+                                list('Q140_1', 'Q142_1', 'Q153_1', 'N trials'),
+                                list('Q140_2', 'Q142_2', 'Q153_2', 'N masses'),
+                                list('Q140_3', 'Q142_3', 'Q153_3', 'N bounces'),
+                                list('Q141_1', 'Q157_1', 'Q154_1', 
+                                     'Explanations'),
+                                list('Q141_2', 'Q157_2', 'Q154_2', 'Analysis'),
+                                list('Q141_3', 'Q157_3', 'Q154_3', 
+                                     'Similar k values'),
+                                list('Q141_4', 'Q157_4', 'Q154_4', 
+                                     'Uncertainty in data'))
+
+quilt.plot(df.students %>%
+             filter(Condition %like% 'Likert') %>%
+             mutate(Condition = case_when(
+               Condition == 'Likert-1' ~ '1->2',
+               Condition == 'Likert-2' ~ '2->1',
+               TRUE ~ Condition
+             )), Likert.comparison.items, Condition = 'Condition', 
+           palette = colorRampPalette(c("white", "#B31B1B")), PLIC = FALSE, legend = TRUE)
+```
+
+```{r, eval = FALSE}
+df.Likert.test <- df.students %>%
+  filter(Condition == 'Likert-1' | Condition == 'Likert-2') %>%
+  dplyr::select(any_of(c('G2.First', Questions))) %>%
+  mutate(student = 1:nrow(.)) %>%
+  melt(., id.vars = c('G2.First', 'student')) %>%
+  mutate(CC.avail = case_when(
+    (G2.First == 0) & (variable %like% '2d|142|157') ~ 1,
+    (G2.First == 1) & (variable %like% '139|140|141') ~ 1,
+    TRUE ~ 0
+  )) %>%
+  select(CC.avail, variable, value)
+
+get.coef.se <- function(df, Q){
+  mod <- clm(factor(value) ~ CC.avail, data = subset(df, variable == Q))
+  coefs <- summary(mod)$coefficients['CC.avail', ]
+  return(list(coefs['Estimate'], coefs['Std. Error']))
+}
+
+coefs <- rbindlist(lapply(Questions, get.coef.se, df = df.Likert.test)) %>%
+  `colnames<-`(c('estimate', 'se')) %>%
+  mutate(term = Questions,
+         conf.low = exp(estimate - 1.96 * se),
+         conf.high = exp(estimate + 1.96 * se),
+         estimate = exp(estimate))
+
+info.t <- data.frame(t(info)) %>%
+  `colnames<-`('Text')
+info.t$index <- row.names(info.t)
+coefs <- left_join(coefs, info.t, by = c('term' = 'index')) %>%
+  mutate(Text = ifelse(term %like% 'Q139|Q140|Q141', 
+                       paste('Group 1:', Text, sep = ' '),  
+                       paste('Group 2:', Text, sep = ' ')))
+
+p <- ggplot(coefs, aes(x = reorder(term, -estimate), y = estimate, text = Text)) +
   geom_point() +
-  facet_wrap(~y) +
-  labs(x = 'Effect', y = 'Log odds ratio (compared to B)', 
-       title = 'Log odds ratios (vs. B) by effect for other items') +
-  scale_x_discrete(labels = c('Likert', 'Group 2 first'))
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0) +
+  labs(x = 'Item', y = 'Change in odds ratio', 
+       title = 'Effect of having a contrasting case present of\nthinking the group did a better job') +
+  geom_hline(yintercept = 1, linetype = 'dashed') +
+  coord_flip() +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+ggplotly(p)
 ```
-I've shown all the other 11 items here without distinguishing between items. A model was fit separately for each item. I think a couple things stand out. First, the Likert items have more variable effects on the summary items, but are generally negative (relative to B), indicating that including the Likert items increases the fraction of students that select B (as was the case with Q4a). Its worth keeping in mind that these effects are small and the error bars are quite large (but not shown for clarity, see below).
+**Questions 2 and 3 from email thread**
 
-Putting Group 2 first, conversely, generally increases the fraction of students that say Group 1 or neither group did well. The ratio of students selecting (Group 2/Both) remains more or less constant across all items, however.
+*We would need to decide on benefits and drawbacks before answering question 2.*
 
-### Disentangling collection of other multiple choice items
-```{r, echo = FALSE}
-model.df <- model.df %>%
-  filter(variable != 'X.Intercept.') %>%
-  rowwise() %>%
-  mutate(Set = strsplit(Item, '_')[[1]][1])
+I think question 3 is interesting given the results below for the *what next* items. Given that students key in methods to rectify sample size issues in those items and students' answers depend on whether they see a contrasting case, I think its interesting whether they responded similarly to Likert items that ask about sample size issues.
 
-# refresher on what the item codes mean
-data.frame(t(info[, Questions[2:(length(Questions) - 1)]]))
+Interestingly, responses to the Likert items **do not** seem to depend on whether students saw a contrasting case, looking particularly at components of the methods related to the number of trials and masses.
 
-ggplot(model.df, aes(x = Item, y = Coefficient, color = variable)) +
-  geom_point(size = 3) +
-  geom_errorbar(aes(ymin = Coefficient - 1.96 * Std.Error, 
-                    ymax = Coefficient + 1.96 * Std.Error), width = 0.1) +
-  facet_grid(y~Set, scales = 'free_x') +
-  labs(title = 'Log odds ratios (vs. B) by effect and item', color = 'Effect') +
-  scale_color_discrete(labels = c('Likert', 'Group 2 first'))
+### Likert items vs. comparison items (i.e., consistency?)
+```{r}
+Likert.comparison.items <- list(list('Q139_1', 'Q2d_1', 'Q152_1', 
+                                     'Equipment used'),
+                                list('Q139_2', 'Q2d_2', 'Q152_2', 
+                                     'Variables measured'),
+                                list('Q139_3', 'Q2d_3', 'Q152_3', 
+                                     'Variables controlled'),
+                                list('Q140_1', 'Q142_1', 'Q153_1', 'N trials'),
+                                list('Q140_2', 'Q142_2', 'Q153_2', 'N masses'),
+                                list('Q140_3', 'Q142_3', 'Q153_3', 'N bounces'),
+                                list('Q141_1', 'Q157_1', 'Q154_1', 
+                                     'Explanations'),
+                                list('Q141_2', 'Q157_2', 'Q154_2', 'Analysis'),
+                                list('Q141_3', 'Q157_3', 'Q154_3', 
+                                     'Similar k values'),
+                                list('Q141_4', 'Q157_4', 'Q154_4', 
+                                     'Uncertainty in data'))
+
+Likert.compare.summary <- function(df, Group1, Group2, Compare, Question, 
+                                   summary = TRUE){
+  df.temp <- df[, c(Group1, Group2, Compare)]
+  colnames(df.temp) <- c('Group.1', 'Group.2', 'Comparison')
+  df.temp$Group.1 <- as.numeric(df.temp$Group.1)
+  df.temp$Group.2 <- as.numeric(df.temp$Group.2)
+
+  if(summary){
+    df.summary <- df.temp %>%
+    filter(!is.na(Group.1) & !is.na(Group.2) & (Comparison != '')) %>%
+    group_by(Group.1, Group.2, Comparison) %>%
+    summarize(N = n())
+  } else {
+    df.summary <- df.temp
+  }
+  
+  df.summary[, 'Aspect'] <- Question
+  return(df.summary)
+}
+
+df.Likert.comparison <- df.students %>%
+  filter(Condition %like% 'Likert')
+
+df.Likert.comparison <- 
+  rbind.fill(lapply(Likert.comparison.items,  
+                    function(x) Likert.compare.summary(df = df.Likert.comparison,
+                                                       Group1 = x[[1]], 
+                                                       Group2 = x[[2]],
+                                                       Compare = x[[3]], 
+                                                       Question = x[[4]])))
+
+df.Likert.comparison$Group.1 <- df.Likert.comparison$Group.1 - 
+  0.1 * (df.Likert.comparison$Comparison %in% c('1', 'B')) + 
+  0.1 * (df.Likert.comparison$Comparison %in% c('2', 'N'))
+df.Likert.comparison$Group.2 <- df.Likert.comparison$Group.2 - 
+  0.1 * (df.Likert.comparison$Comparison %in% c('B', 'N')) + 
+  0.1 * (df.Likert.comparison$Comparison %in% c('1', '2'))
+
+df.Likert.comparison <- df.Likert.comparison %>%
+  mutate(Comparison = case_when(
+    Comparison == '1' ~ 'Group 1',
+    Comparison == '2' ~ 'Group 2',
+    Comparison == 'B' ~ 'Both groups',
+    Comparison == 'N' ~ 'Neither group'
+  ))
+
+df.Likert.comparison.total <- df.Likert.comparison %>%
+  group_by(Group.1, Group.2, Comparison) %>%
+  summarize(N = sum(N)) %>%
+  mutate(Aspect = 'All')
+
+fig <- plot_ly(df.Likert.comparison.total, type = 'scatter', x = ~Group.1, 
+               y = ~Group.2, size = ~N, color = ~Comparison, 
+               text = ~paste('# students:', N, sep = ' '), colors = palette.4_2, 
+               hoverinfo = 'text', marker = list(sizeref = 5, 
+                                                 sizemode = 'diameter'))
+
+for(items in Likert.comparison.items){
+  fig <- fig %>% 
+    add_trace(data = df.Likert.comparison[df.Likert.comparison$Aspect == 
+                                            items[[4]],], visible = FALSE, 
+              marker = list(sizeref = 1.5, sizemode = 'diameter'))
+}
+
+Likert.comparison.items <- append(list(list('All', 'All', 'All', 'All')), 
+                                  Likert.comparison.items)
+
+fig <- fig %>%
+  layout(xaxis = list(title = 'Group 1 Likert'),
+         yaxis = list(title = 'Group 2 Likert'),
+         legend = list(title = list(text = '<b> Which group did better? </b>'), 
+                       orientation = 'h', x = 0.5, y = 1.1),
+         updatemenus = list(
+           list(
+             x = 1.1,
+             y = 1.2,
+             buttons = lapply(Likert.comparison.items, function(set){
+               list(method = 'restyle',
+                    args = list('visible', 
+                                c(unlist(Likert.comparison.items) %in% set)),
+                    label = set[[4]])
+             })
+           )
+         ))
+fig
 ```
-This plot extends on the above plot and separates effects by item and includes error bars.
+```{r}
+Likert.comparison.items <- list(list('Q139_1', 'Q2d_1', 'Q152_1', 
+                                     'Equipment used'),
+                                list('Q139_2', 'Q2d_2', 'Q152_2', 
+                                     'Variables measured'),
+                                list('Q139_3', 'Q2d_3', 'Q152_3', 
+                                     'Variables controlled'),
+                                list('Q140_1', 'Q142_1', 'Q153_1', 'N trials'),
+                                list('Q140_2', 'Q142_2', 'Q153_2', 'N masses'),
+                                list('Q140_3', 'Q142_3', 'Q153_3', 'N bounces'),
+                                list('Q141_1', 'Q157_1', 'Q154_1', 
+                                     'Explanations'),
+                                list('Q141_2', 'Q157_2', 'Q154_2', 'Analysis'),
+                                list('Q141_3', 'Q157_3', 'Q154_3', 
+                                     'Similar k values'),
+                                list('Q141_4', 'Q157_4', 'Q154_4', 
+                                     'Uncertainty in data'))
 
-### Aggregate multinomial model
-```{r, echo = FALSE}
-df.students.long <- df.students %>%
-  select(c(Questions[2:(length(Questions) - 1)], 'Likert', 'G2.First')) %>%
-  melt(., id.vars = c('Likert', 'G2.First'), variable.name = 'Item', 
-       value.name = 'Selection') %>%
-  rowwise() %>%
-  mutate(Set = strsplit(as.character(Item), '_')[[1]][1])
-
-mod <- multinom(relevel(as.factor(Selection), ref = 'B') ~ Likert + G2.First, df.students.long)
-
-mod.intSet <- multinom(relevel(as.factor(Selection), 
-                               ref = 'B') ~ Set * (Likert + G2.First), 
-                       df.students.long)
-
-mod.intItem <- multinom(relevel(as.factor(Selection), 
-                               ref = 'B') ~ Item * (Likert + G2.First), 
-                       df.students.long)
-
-# model with all items combined
-ggcoefstats(mod, output = 'tidy') %>%
-  filter(!grepl('Intercept|Other', term)) %>%
-  mutate(term = gsub('G2.First', 'Group 2 first', term),
-         term = gsub('_N', ' (N/B)', term),
-         term = gsub('_2', ' (2/B)', term),
-         term = gsub('_1', ' (1/B)', term)) %>%
-  arrange(desc(term)) %>%
-  ggcoefstats(., title = 'Effects (log odds ratios) for other items')
-
-# ...including interactions by grouping set
-ggcoefstats(mod.intSet, output = 'tidy') %>%
-  filter(!grepl('Intercept|Other', term)) %>%
-  filter(grepl('Likert|G2.First', term)) %>%
-  mutate(term = gsub('G2.First', 'Group 2 first', term),
-         term = gsub('_N', ' (N/B)', term),
-         term = gsub('_2', ' (2/B)', term),
-         term = gsub('_1', ' (1/B)', term)) %>%
-  arrange(desc(abs(estimate))) %>%
-  ggcoefstats(., title = 'Effects (log odds ratios) for other items')
-
-# ..including interactions by individual items
-ggcoefstats(mod.intItem, output = 'tidy') %>%
-  filter(!grepl('Intercept|Other', term)) %>%
-  filter(grepl('Likert|G2.First', term)) %>%
-  mutate(term = gsub('G2.First', 'Group 2 first', term),
-         term = gsub('t_N', 't (N/B)', term),
-         term = gsub('t_2', 't (2/B)', term),
-         term = gsub('t_1', 't (1/B)', term)) %>%
-  arrange(desc(abs(estimate))) %>%
-  head(20) %>%
-  ggcoefstats(., title = 'Effects (log odds ratios) for other items')
+beachball.plot(df.students, Likert.comparison.items, Which = 'All')
+beachball.plot(df.students, Likert.comparison.items, Which = 'All', scale = TRUE)
 ```
-I also constructed three aggregate models for the 11 remaining items. Overall, the effects are pretty small. Putting Group 2 has some small (positive) effect on the fraction of students selecting Group 1 or neither group and, as found above, the Likert items appear to increase the fraction of students that select 'both groups'.
 
-The interaction models indicated, as we found above, that the effects of the Likert items are more variable. I've only shown the 20 largest effects in the last plot.
+```{r, eval = FALSE}
+df.Likert.comparison <- df.students %>%
+  filter(Condition %like% 'Likert')
 
-## "What to do next" questions
+df.Likert.comparison.test <- 
+  rbind.fill(lapply(Likert.comparison.items[2:length(Likert.comparison.items)],  
+                    function(x) Likert.compare.summary(df = df.Likert.comparison,
+                                                       Group1 = x[[1]], 
+                                                       Group2 = x[[2]],
+                                                       Compare = x[[3]], 
+                                                       Question = x[[4]], 
+                                                       summary = FALSE)))
+df.Likert.comparison.test
+
+df.Likert.comparison.test$Comparison <- 
+  relevel(as.factor(df.Likert.comparison.test$Comparison), ref = 'B')
+mod <- multinom(Comparison ~ Group.1 * Group.2 * Aspect, 
+                df.Likert.comparison.test)
+summary(mod)
+p <- ggcoefstats(mod, output = 'tidy') %>%
+  filter(term %like% ':Aspect') %>%
+  ggcoefstats(.)
+p
+```
+
+
+**Question 4 from email thread**
+
+There's some mismatch between the Likert and comparison questions. I'm not sure if its **That** bad, but maybe we should think about ways to quantify this?
+
+**Need quantitivative measure of overall disagreement.**
+
+## Multiple response items
 ```{r, warning = FALSE, message = FALSE, echo = FALSE}
 # pull only the 'what's next' questions (and condition variables)
-df.next <- df.students[, 
-                       grepl('(Q(134|336|2e|348|147)_(\\d+)$|Condition|Likert|G2.First)',
-                             names(df.students))] %>%
+Questions <- c('Q1b', 'Q1e', 'Q2b', 'Q2e', 'Q3b', 'Q3d', 'Q3e')
+question_text <- data.frame(lapply(read.csv('PLIC_November2020.csv', nrows = 1),
+                                   FUN = function(x) paste(gsub("\\? .*$", "", x), 
+                                                           '?', sep = '')))
+question_text <- data.frame(t(question_text)) %>%
+  `colnames<-`('Text')
+question_text$index <- row.names(question_text)
+question_text <- question_text %>%
+  mutate(index = gsub('134', '1e', index),
+         index = gsub('145', '3b', index),
+         index = gsub('147', '3e', index),
+         index = gsub('_.*$', '', index),
+         Text = gsub('Team Panda', 'Group 1', Text),
+         Text = gsub('Team Ostrich', 'Group 2', Text),
+         Text = paste(Text, ' (', index, ')', sep = '')) %>%
+  filter(!duplicated(index) & index %in% Questions)
+
+add.line.skip <- function(text){
+  split.str <- strsplit(text, ' ')[[1]]
+  middle.char <- round(length(split.str)/2, 0)
+  split.str[middle.char] <- paste('\n', split.str[middle.char], sep = '')
+  return(paste(split.str, collapse = ' '))
+}
+question_text$Text <- sapply(question_text$Text, add.line.skip)
+
+df.multipleResponse <- 
+  df.students[, grepl('(Q(1b|329|134|336|2b|341|2e|348|145|3d|147)_(\\d+)$|Condition|Likert|G2.First)',
+                      names(df.students))] %>%
   mutate(id = row.names(.)) %>% # need an ID column to convert back to wide
   melt(., id.vars = c('id', 'Condition', 'Likert', 'G2.First'), 
        variable.name = 'Response_choice') %>%
   # combine 'next' questions from Likert and None conditions into single variable
   mutate(value = ifelse(is.na(value), 0, 1),
+         value = ifelse(Likert == 1 & 
+                          Response_choice %like% 'Q329|Q336|Q341|Q348', 
+                        NA_real_, value),
+         value = ifelse(Likert == 0 & Response_choice %like% 'Q1b|Q134|Q2b|Q2e', 
+                        NA_real_, value),
+         Response_choice = str_replace(Response_choice, '329', '1b'),
          Response_choice = str_replace(Response_choice, '336', '134'),
+         Response_choice = str_replace(Response_choice, '341', '2b'),
          Response_choice = str_replace(Response_choice, '348', '2e'),
          Response_choice = gsub('134', '1e', Response_choice),
-         Response_choice = gsub('147', '3e', Response_choice)) %>% 
+         Response_choice = gsub('145', '3b', Response_choice),
+         Response_choice = gsub('147', '3e', Response_choice)) %>%
+  na.omit() %>%
   rowwise() %>%
-  mutate(Item = strsplit(as.character(Response_choice), '_')[[1]][1],
-         RC_code = strsplit(as.character(Response_choice), '_')[[1]][2]) %>%
-  mutate(Page = case_when(
-    Item == 'Q1e' ~ 'Group 1',
-    Item == 'Q2e' ~ 'Group 2',
-    TRUE ~ 'Group 2 (cont.)'
-  )) %>%
-  filter(!(Response_choice %in% c('Q1e_7')))
+  mutate(Item = strsplit(as.character(Response_choice), '_')[[1]][1]) %>%
+  data.table(.)
 
-N.RCs <- unique(df.next %>%
-                  select(Item, RC_code)) %>%
+df.multipleResponse.wide <- df.multipleResponse
+
+df.multipleResponse <- 
+  df.multipleResponse[, Total := .N, by = c('Condition', 'Response_choice')] %>%
+  data.frame(.) %>%
+  group_by(Condition, Item, Response_choice, Total) %>%
+  summarize(N = sum(value)) %>%
+  mutate(Frac = N/Total) %>%
+  select(Condition, Item, Response_choice, Frac) %>%
+  mutate(Condition = str_replace(Condition, '-', '_')) %>% 
+  rowwise() %>%
+  mutate(RC_code = strsplit(as.character(Response_choice), '_')[[1]][2])
+
+info.t <- data.frame(t(info)) %>%
+  `colnames<-`('Text')
+info.t$index <- row.names(info.t)
+info.t <- info.t %>%
+  mutate(index = gsub('134', '1e', index),
+         index = gsub('145', '3b', index),
+         index = gsub('147', '3e', index))
+
+df.multipleResponse <- left_join(df.multipleResponse, info.t, 
+                                 by = c('Response_choice' = 'index'))
+
+df.multipleResponse <- dcast(df.multipleResponse, 
+                             Item + Response_choice + RC_code + Text ~ Condition, 
+                             value.var = 'Frac') %>%
+  mutate(RC_code = as.numeric(RC_code)) %>%
   group_by(Item) %>%
-  summarize(N = n())
+  mutate(RC_code = rank(RC_code))
 
-set.seed(11) # for consistency
-for(Q in c('Q1e', 'Q2e', 'Q3e')){
-  df.dummy <- df.next %>%
-    filter(Item == Q)
-  
-  N.students.vec <- c(rep(150, N.RCs[N.RCs$Item == Q, 'N'] %>%
-                            pull()), rep(137, N.RCs[N.RCs$Item == Q, 'N'] %>%
-                                           pull()), 
-                      rep(150, N.RCs[N.RCs$Item == Q, 'N'] %>%
-                            pull()), rep(137, N.RCs[N.RCs$Item == Q, 'N'] %>%
-                                           pull()))
-  
-  png(filename = paste('C:/Users/Cole/Documents/Dissertation/AB_analysis/', Q, 
-                       '_AB-condition.png', sep = ''))
-  p <- ggplot(df.dummy %>%
-                filter(value == 1), 
-              aes(x = Response_choice, fill = Condition, group = Condition)) +
-    geom_bar(position = 'dodge', aes(y = (..count..)/N.students.vec)) +
-    labs(fill = 'Condition', x = 'Response choice', 
-         y = 'Fraction of respondents') +
-    scale_fill_discrete(labels = c('V1.S', 'V2.S', 'V1.N', 'V2.N')) +
-    theme(axis.text.x = element_text(angle = 30, hjust = 1), 
-          legend.position = 'none')
-  print(p)
-  dev.off()
-  
-  if(Q == 'Q1e'){ # pull info for specific set of questions
-    info.temp <- info[, names(info)[names(info) %like% 'Q134_(\\d+)$']]
-  } else if(Q == 'Q2e'){
-    info.temp <- info[, names(info)[names(info) %like% 'Q2e_(\\d+)$']]
-  } else{
-    info.temp <- info[, names(info)[names(info) %like% 'Q147_(\\d+)$']]
-  }
-  names(info.temp) <- unlist(lapply(names(info.temp), 
-                                    function(x) strsplit(x, '_')[[1]][2]))
-  print(data.frame(t(info.temp)))
-  
-  # need to convert dataset for question back to wide form to use with MI.test
-  print(MI.test(dcast(df.dummy, formula = id + Condition ~ Response_choice,
-                      fun.aggregate = sum, value.var = "value") %>%
-                  select(-id), I = 1, 
-          J = length(unique(df.dummy$Response_choice)), B = 1000, 
-          print.status = FALSE))
+fig <- plot_ly(df.multipleResponse[df.multipleResponse$Item == Questions[1],], 
+               type = 'bar', x = ~RC_code, y = ~Likert_1, text = ~Text, 
+               name = 'Likert-1', color = I(palette.4[1])) %>% 
+  add_trace(y = ~Likert_2, text = ~Text, name = 'Likert-2', 
+            color = I(palette.4[2])) %>%
+  add_trace(y = ~None_1, text = ~Text, name = 'None-1', 
+            color = I(palette.4[3])) %>%
+  add_trace(y = ~None_2, text = ~Text, name = 'None-2', 
+            color = I(palette.4[4]))
+
+for(Q in Questions[-1]){
+  fig <- fig %>% 
+    add_trace(data = df.multipleResponse[df.multipleResponse$Item == Q,], 
+              y = ~Likert_1, text = ~Text, name = 'Likert-1', 
+              color = I(palette.4[1]), visible = FALSE) %>% 
+    add_trace(data = df.multipleResponse[df.multipleResponse$Item == Q,], 
+              y = ~Likert_2, text = ~Text, name = 'Likert-2', 
+              color = I(palette.4[2]), visible = FALSE) %>% 
+    add_trace(data = df.multipleResponse[df.multipleResponse$Item == Q,], 
+              y = ~None_1, text = ~Text, name = 'None-1', color = I(palette.4[3]), 
+              visible = FALSE) %>% 
+    add_trace(data = df.multipleResponse[df.multipleResponse$Item == Q,], 
+              y = ~None_2, text = ~Text, name = 'None-2', color = I(palette.4[4]), 
+              visible = FALSE)
 }
+
+fig <- fig %>%
+  layout(barmode = 'group',
+         xaxis = list(title = 'Selection'),
+         yaxis = list(title = 'Fraction of respondents'),
+         updatemenus = list(
+           list(
+             x = 0.75,
+             y = 1.1,
+             buttons = lapply(Questions, function(Q){
+               list(method = 'restyle',
+                    args = list('visible', c(rbind(Questions == Q, 
+                                                   Questions == Q,
+                                                   Questions == Q, 
+                                                   Questions == Q))),
+                    label = question_text[question_text$index == Q, 'Text'])
+             })
+           )
+         ))
+
+fig
 ```
-MI.test uses three methods for conducting chi-squared tests of independence with multiple response categorical variables (MRCV), which violate regular chi-squared test assumptions of mutual exclusivity. All three methods produced similar p-values for each of the three methods questions (Group 1: p = (0.10, 0.16), Group 2: p = (0.004, 0.011), Group 2, cont: p = (<0.0005, 0.007)), suggesting that we can't say there are any differences in how students respond to Group 1's "what's next?" questions regardless of condition. For Group 2 and Group 2 (cont.), we can make this conclusion, but looking at the individual item chi-squared values and the plots, the differences in distributions are driven by one item in both cases: 34 -- "Repeat the experiment with more and different masses" and, again, is mainly affected by the ordering of the groups. In both conditions where students saw Group 2 first, they were more likely to say that the group should test more masses, which makes sense. When students see Group 1 first, then Group 2, the number of masses tested by Group 2 doesn't sound so bad.
+*Questions 6 and 7 from email thread**
 
-Overall, just looking at the plots, the group ordering effect is more pronounced than the effect of the Likert items. Effects of group ordering would look like ||_||_ or _||_|| (e.g., up/down/up/down), whereas effects of Likert items would look like |||__ or __||| (e.g., up/up/down/down).
+**Question 6**
+Students typically suggest next steps (for both groups) along the lines of *reduce uncertainty, take more trials*, and for Group 1, students typically suggest testing more mases, while for Group 2, students typically suggest comparing the *k*-values to the expected value.
 
-### Analysis of Q2e_34 and Q3e_34
+**Question 7** 
+For Group 1, contrasting cases affects whether students suggest taking more trials (x = 2). Students are more likely to suggest Group 1 take more trials if they see Group 1 first.
+
+For Group 2 (fixed intercept), contrasting cases affects whether students suggest testing other variables (x = 2; this might be a combination of scaffolding and contrasting cases), changing the analysis (x = 4), or testing other masses (x = 9).
+
+After changing the intercept, only the next step to test other masses (x = 9) persists.
+
 ```{r}
-df.next %>%
-  filter((value == 1) & (Response_choice %in% c('Q2e_34', 'Q3e_34'))) %>%
-  group_by(G2.First, Response_choice) %>%
-  summarize(N = n())
+df.multipleResponse <- 
+  df.students[, grepl('(Q(1b|329|134|336|2b|341|2e|348|145|3d|147)_(\\d+)$|Condition|Likert|G2.First)',
+                      names(df.students))] %>%
+  mutate(id = row.names(.)) %>% # need an ID column to convert back to wide
+  melt(., id.vars = c('id', 'Condition', 'Likert', 'G2.First'), 
+       variable.name = 'Response_choice') %>%
+  # combine 'next' questions from Likert and None conditions into single variable
+  mutate(value = ifelse(is.na(value), 0, 1),
+         value = ifelse(Likert == 1 & 
+                          Response_choice %like% 'Q329|Q336|Q341|Q348', 
+                        NA_real_, value),
+         value = ifelse(Likert == 0 & Response_choice %like% 'Q1b|Q134|Q2b|Q2e', 
+                        NA_real_, value),
+         Response_choice = str_replace(Response_choice, '329', '1b'),
+         Response_choice = str_replace(Response_choice, '336', '134'),
+         Response_choice = str_replace(Response_choice, '341', '2b'),
+         Response_choice = str_replace(Response_choice, '348', '2e'),
+         Response_choice = gsub('134', '1e', Response_choice),
+         Response_choice = gsub('145', '3b', Response_choice),
+         Response_choice = gsub('147', '3e', Response_choice)) %>%
+  na.omit() %>%
+  rowwise() %>%
+  mutate(Item = strsplit(as.character(Response_choice), '_')[[1]][1]) %>%
+  data.table(.)
 
-df.next %>%
-  filter((value == 1) & (Response_choice %in% c('Q2e_34', 'Q3e_34'))) %>%
-  group_by(Likert, Response_choice) %>%
-  summarize(N = n()/287)
+df.multipleResponse.wide <- df.multipleResponse
+
+df.multipleResponse <- 
+  df.multipleResponse[, Total := .N, by = c('G2.First', 'Response_choice')] %>%
+  data.frame(.) %>%
+  group_by(G2.First, Item, Response_choice, Total) %>%
+  summarize(N = sum(value)) %>%
+  mutate(Frac = N/Total) %>%
+  select(G2.First, Item, Response_choice, Frac) %>%
+  mutate(G2.First = str_replace(G2.First, '-', '_')) %>% 
+  rowwise() %>%
+  mutate(RC_code = strsplit(as.character(Response_choice), '_')[[1]][2])
+
+info.t <- data.frame(t(info)) %>%
+  `colnames<-`('Text')
+info.t$index <- row.names(info.t)
+info.t <- info.t %>%
+  mutate(index = gsub('134', '1e', index),
+         index = gsub('145', '3b', index),
+         index = gsub('147', '3e', index))
+
+df.multipleResponse <- left_join(df.multipleResponse, info.t, 
+                                 by = c('Response_choice' = 'index'))
+
+df.multipleResponse <- dcast(df.multipleResponse, 
+                             Item + Response_choice + RC_code + Text ~ G2.First, 
+                             value.var = 'Frac') %>%
+  mutate(RC_code = as.numeric(RC_code)) %>%
+  group_by(Item) %>%
+  mutate(RC_code = rank(RC_code),
+         diff = ifelse(Item %like% '1', `0` - `1`, `1` - `0`))
+
+df.temp <- df.multipleResponse %>%
+  filter((Item %like% 'e') & !(Text %like% 'Other')) %>%
+  mutate(Text = case_when(
+    (Text == 'Use a different analysis (e.g., graph the results, incorporate systematic effects)') | 
+      (Text == 'Change the analysis (e.g., use a different fit line, incorporate systematic effects)') ~ 'Change the analysis',
+    Text == 'Reduce uncertainty (e.g., more trials for the same masses, more bounces per trial, etc.)' ~ 'Take more trials/bounces',
+    Text == 'Compare their k-values to the expected value' ~ 'Compare their k-value to the expected value',
+    TRUE ~ Text
+  ))
+
+df.temp$Text <- sapply(df.temp$Text, add.line.skip)
+df.levels <- df.temp %>%
+  group_by(Text) %>%
+  summarize(avg.diff = mean(diff)) %>%
+  arrange(avg.diff)
+  
+df.levels
+
+ggplot(df.temp, aes(x = factor(Text, levels = df.levels$Text), y = diff, 
+                    group = Item, fill = Item)) +
+  geom_bar(stat = 'identity', position = 'dodge') +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 60, hjust = 1),
+        axis.ticks.x = element_blank()) +
+  scale_fill_manual(values = palette.4, labels = c('Group 1', 'Group 2', 
+'Group 2 (cont.)')) +
+  labs(title = 'Difference in fraction of students\nselecting next steps (no CC - CC)',
+       y = 'Difference', 
+       fill ='Question Set')
 ```
+
+
+```{r, warning = FALSE, message = FALSE, include = FALSE}
+df.multipleResponse.wide <- df.multipleResponse.wide %>%
+  rowwise() %>%
+  mutate(RC_code = as.numeric(strsplit(as.character(Response_choice), 
+                                       '_')[[1]][2])) %>%
+  group_by(Item) %>%
+  mutate(RC_code = paste('R', dense_rank(RC_code), sep = ''))
+
+examine.item <- function(df, Q, type = 'N', p.value = FALSE, wide.data = FALSE){
+  df <- dcast(df %>%
+                filter(Item == Q), formula = id + Condition ~ RC_code,
+              fun.aggregate = sum, value.var = "value") %>%
+    data.frame(.) %>%
+    select(-id)
+  if(type == 'N'){
+    df <- df %>%
+      mutate(N.selections = rowSums(.[, -1]),
+             Item = Q)
+    if(p.value){
+      print(Q)
+      print(kruskal.test(N.selections ~ Condition, df)$p.value)
+    }
+    if(wide.data){
+      return(df)
+    }
+    
+    df <- df %>%
+      count(Item, Condition, N.selections) %>%
+      data.table(.)
+    df <- df[, Total := sum(n), by = 'Condition'][, Frac := n/Total] %>%
+      data.frame(.)
+    return(df)
+  } else {
+      x <- MI.test(df, I = 1, J = (length(colnames(df)) - 1), type = 'all', 
+                   B = 100, print.status = FALSE)
+      print(c('boot' = x$boot$p.value.boot, 'rs2' = x$rs2$p.value.rs2, 
+              'bon' = x$bon$p.value.bon))
+      print(x$bon$X.sq.S.ij.p.bon)
+  }
+}
+
+examine.item(df.multipleResponse.wide, 'Q1e', 'test')
+```
+
+### Likert vs. *What to do next*
+```{r}
+Likert.next.items <- list(list('Q139_1', 'Q134_9', 
+                                     'Equipment used (Group 1)'),
+                                list('Q139_2', 'Q134_1', 
+                                     'Variables measured (Group 1)'), 
+                                list('Q139_3', 'Q134_1', 
+                                     'Variables controlled (Group 1)'),
+                                list('Q140_1', 'Q134_2', 'N trials (Group 1)'), 
+                                list('Q140_2', 'Q134_3', 'N masses (Group 1)'),
+                                list('Q140_3', 'Q134_2', 'N bounces (Group 1)'),
+                                list('Q141_2', 'Q134_4', 'Analysis (Group 1)'),
+                                list('Q141_4', 'Q134_2', 
+                                     'Uncertainty in data (Group 1)'),
+                                list('Q2d_1', 'Q2e_4', 'Equipment used (Group 2)'),
+                                list('Q2d_2', 'Q2e_6', 
+                                     'Variables measured (Group 2)'),
+                                list('Q2d_3', 'Q2e_6', 
+                                     'Variables controlled (Group 2)'),
+                                list('Q142_1', 'Q2e_16', 'N trials (Group 2)'),
+                                list('Q142_2', 'Q2e_34', 'N masses (Group 2)'),
+                                list('Q142_3', 'Q2e_16', 'N bounces (Group 2)'),
+                                list('Q157_2', 'Q2e_12', 'Analysis (Group 2)'),
+                                list('Q157_4', 'Q2e_16', 
+                                     'Uncertainty in data (Group 2)'))
+
+Likert.next.summary <- function(df, Likert, Next, Item){
+  df.summary <- df %>%
+    group_by_(Likert, Next) %>%
+    summarize(N = n()) %>%
+    filter(!is.na(!!as.symbol(Likert)))
+
+  df.summary <- data.table(df.summary)[, Frac := N/sum(N), by = Likert] %>%
+    data.frame(.) %>%
+    mutate('Likert' = !!as.symbol(Likert),
+           'Next' = ifelse(is.na(!!as.symbol(Next)), 0, 1),
+           'Item' = Item) %>%
+    select(Likert, Next, Item, N, Frac)
+  
+    return(df.summary)
+}
+
+df.Likert.next <- df.students[df.students$Condition %like% 'Likert',
+                              names(df.students)[names(df.students) %in% 
+                                                   unlist(Likert.next.items)]]
+
+df.Likert.next <- 
+  rbind.fill(lapply(Likert.next.items,  
+                    function(x) Likert.next.summary(df = df.Likert.next,
+                                                    Likert = x[[1]], 
+                                                    Next = x[[2]],
+                                                    Item = x[[3]])))
+
+fig <- plot_ly(df.Likert.next[(df.Likert.next$Item == 
+                                Likert.next.items[[1]][[3]]) & 
+                                (df.Likert.next$Next == 0),], type = 'bar', 
+               x = ~Likert, y = ~Frac, text = ~paste('# students:', N, sep = ' '), 
+               color = I(palette.2_3[1]), hoverinfo = 'text', name = 'No') %>%
+  add_trace(data = df.Likert.next[(df.Likert.next$Item == 
+                                Likert.next.items[[1]][[3]]) & 
+                                (df.Likert.next$Next == 1),], type = 'bar', 
+            x = ~Likert, y = ~Frac, text = ~paste('# students:', N, sep = ' '), 
+            color = I(palette.2_3[2]), hoverinfo = 'text', name = 'Yes')
+
+for(items in Likert.next.items[-1]){
+  fig <- fig %>% 
+    add_trace(data = df.Likert.next[(df.Likert.next$Item == 
+                                items[[3]]) & (df.Likert.next$Next == 0),], 
+              type = 'bar', x = ~Likert, y = ~Frac, 
+              text = ~paste('# students:', N, sep = ' '), 
+              color = I(palette.2_3[1]), hoverinfo = 'text', name = 'No', 
+              visible = FALSE) %>%
+    add_trace(data = df.Likert.next[(df.Likert.next$Item == 
+                                items[[3]]) & (df.Likert.next$Next == 1),], 
+              type = 'bar', x = ~Likert, y = ~Frac, 
+              text = ~paste('# students:', N, sep = ' '), 
+              color = I(palette.2_3[2]), hoverinfo = 'text', name = 'Yes', 
+              visible = FALSE)
+}
+
+Likert.next.items.first <- lapply(Likert.next.items, `[[`, 1)
+
+fig <- fig %>%
+  layout(barmode = 'group',
+         xaxis = list(title = 'Likert'),
+         yaxis = list(title = 'Fraction of respondents'),
+         legend = list(title = list(text = '<b> Next step selected? </b>'),
+                       orientation = 'h', x = 0.5, y = 1.1),
+         updatemenus = list(
+           list(
+             x = 1.1,
+             y = 1.2,
+             buttons = lapply(Likert.next.items, function(set){
+               list(method = 'restyle',
+                    args = list('visible', 
+                                c(rbind(Likert.next.items.first %in% set[[1]],
+                                        Likert.next.items.first %in% set[[1]]))),
+                    label = set[[3]])
+             })
+           )
+         ))
+fig
+```
+Have to dig into this a little more, but, in some cases, students' responses to the Likert items align with their responses to the *next steps* items and in some cases (particularly the number of masses used by Group 2) they do not.
+
+### Number of selections
+```{r}
+df.selections <- bind_rows(lapply(Questions, examine.item, 
+                                  df = df.multipleResponse.wide)) %>%
+  mutate(Condition = str_replace(Condition, '-', '_')) %>%
+  dcast(., formula = Item + N.selections ~ Condition,
+              fun.aggregate = sum, value.var = "Frac")
+
+fig <- plot_ly(df.selections[df.selections$Item == Questions[1],], 
+               type = 'bar', x = ~N.selections, y = ~Likert_1, name = 'Likert-1', 
+               color = I(palette.4[1])) %>% 
+  add_trace(y = ~Likert_2, name = 'Likert-2', color = I(palette.4[2])) %>%
+  add_trace(y = ~None_1, name = 'None-1', color = I(palette.4[3])) %>%
+  add_trace(y = ~None_2, name = 'None-2', color = I(palette.4[4]))
+
+for(Q in Questions[-1]){
+  fig <- fig %>% 
+    add_trace(data = df.selections[df.selections$Item == Q,], 
+              y = ~Likert_1, name = 'Likert-1', color = I(palette.4[1]), 
+              visible = FALSE) %>% 
+    add_trace(data = df.selections[df.selections$Item == Q,], 
+              y = ~Likert_2, name = 'Likert-2', color = I(palette.4[2]), 
+              visible = FALSE) %>% 
+    add_trace(data = df.selections[df.selections$Item == Q,], 
+              y = ~None_1, name = 'None-1', color = I(palette.4[3]), 
+              visible = FALSE) %>% 
+    add_trace(data = df.selections[df.selections$Item == Q,], 
+              y = ~None_2, name = 'None-2', color = I(palette.4[4]), 
+              visible = FALSE)
+}
+
+fig <- fig %>%
+  layout(barmode = 'group',
+         xaxis = list(title = 'Number of selections'),
+         yaxis = list(title = 'Fraction of respondents'),
+         updatemenus = list(
+           list(
+             x = 0.75,
+             y = 1.1,
+             buttons = lapply(Questions, function(Q){
+               list(method = 'restyle',
+                    args = list('visible', c(rbind(Questions == Q, 
+                                                   Questions == Q,
+                                                   Questions == Q, 
+                                                   Questions == Q))),
+                    label = question_text[question_text$index == Q, 'Text'])
+             })
+           )
+         ))
+
+fig
+```
+I thought that one possible explanation for the differences in selection patterns when contrasting cases are present could be that respondents aren't selecting as many things after seeing a contrasting case and are more focused in the things they select.
+
+I might be right on this for **Group 1** (Q1e); there's about a 7-10 percentage point drop in the number of students selecting two responses after seeing the contrasting case, but this pattern doesn't hold for Group 2.
+
+#### Students that only select one response
+```{r}
+df.selections.oneSelection <- bind_rows(lapply(Questions, examine.item, 
+                                  df = df.multipleResponse.wide, 
+                                  wide.data = TRUE)) %>%
+  mutate(Condition = str_replace(Condition, '-', '_')) %>%
+  filter(N.selections == 1) %>%
+  select(-N.selections) %>%
+  group_by(Item, Condition) %>%
+  summarize_all(mean) %>%
+  melt(., id.vars = c('Item', 'Condition')) %>%
+  dcast(., Item + variable ~ Condition, value.var = 'value') %>%
+  na.omit() %>%
+  left_join(., df.multipleResponse %>%
+              mutate(RC_code = paste('R', RC_code, sep = '')) %>%
+              select(Item, RC_code, Text), by = c('Item' = 'Item', 
+                                                  'variable' = 'RC_code'))%>%
+  rowwise() %>%
+  mutate(variable = as.numeric(strsplit(as.character(variable), 'R')[[1]][2]))
+
+fig <- 
+  plot_ly(df.selections.oneSelection[df.selections.oneSelection$Item == Questions[1],], 
+          type = 'bar', x = ~variable, y = ~Likert_1, text = ~Text, 
+          name = 'Likert-1', color = I(palette.4[1])) %>% 
+  add_trace(y = ~Likert_2, name = 'Likert-2', text = ~Text, 
+            color = I(palette.4[2])) %>%
+  add_trace(y = ~None_1, name = 'None-1', text = ~Text, 
+            color = I(palette.4[3])) %>%
+  add_trace(y = ~None_2, name = 'None-2', text = ~Text, color = I(palette.4[4]))
+
+for(Q in Questions[-1]){
+  fig <- fig %>% 
+    add_trace(data = df.selections.oneSelection[df.selections.oneSelection$Item == Q,], 
+              y = ~Likert_1, text = ~Text, name = 'Likert-1', 
+              color = I(palette.4[1]), visible = FALSE) %>% 
+    add_trace(data = df.selections.oneSelection[df.selections.oneSelection$Item == Q,], 
+              y = ~Likert_2, text = ~Text, name = 'Likert-2', 
+              color = I(palette.4[2]), visible = FALSE) %>% 
+    add_trace(data = df.selections.oneSelection[df.selections.oneSelection$Item == Q,], 
+              y = ~None_1, text = ~Text, name = 'None-1', color = I(palette.4[3]), 
+              visible = FALSE) %>% 
+    add_trace(data = df.selections.oneSelection[df.selections.oneSelection$Item == Q,], 
+              y = ~None_2, text = ~Text, name = 'None-2', color = I(palette.4[4]), 
+              visible = FALSE)
+}
+
+fig <- fig %>%
+  layout(barmode = 'group',
+         xaxis = list(title = ''),
+         yaxis = list(title = 'Fraction of respondents'),
+         updatemenus = list(
+           list(
+             x = 0.75,
+             y = 1.1,
+             buttons = lapply(Questions, function(Q){
+               list(method = 'restyle',
+                    args = list('visible', c(rbind(Questions == Q, 
+                                                   Questions == Q,
+                                                   Questions == Q, 
+                                                   Questions == Q))),
+                    label = question_text[question_text$index == Q, 'Text'])
+             })
+           )
+         ))
+
+fig
+```
+Thought looking at students who only selected one response might give us an idea of what students find most salient. Haven't looked into this yet.
+
+```{r}
+df.students %>%
+  group_by(Likert) %>%
+  summarize(median(Duration..in.seconds.))
+
+(1037.5 - 906)/1037.5
+```
+
+
+## Time spent on page
+```{r, eval = FALSE}
+df.time <- 
+  df.students[, c(names(df.students)[names(df.students) %like% 'Submit|Qt\\d_3'],
+                  'Condition')] %>%
+  mutate(Group1.t = ifelse(!is.na(Qt1_3), Qt1_3, Q338_Page.Submit),
+         Group2.t = ifelse(!is.na(Qt2_3), Qt2_3, Q351_Page.Submit),
+         Group2.cont.t = Qt3_3,
+         Compare.t = Qt4_3,
+         id = row.names(.)) %>%
+  select(Condition, Group1.t, Group2.t, Group2.cont.t, Compare.t, id) %>%
+  melt(., id.vars = c('id', 'Condition'), variable.name = 'Page', 
+       value.name = 'Time') %>%
+  mutate(Page = case_when(
+    Page == 'Group1.t' ~ 'Group 1',
+    Page == 'Group2.t' ~ 'Group 2',
+    Page == 'Group2.cont.t' ~ 'Group 2 (cont.)',
+    Page == 'Compare.t' ~ 'Comparison'
+  ),
+  Page = factor(Page, levels = c('Group 1', 'Group 2', 'Group 2 (cont.)', 
+                                 'Comparison')))
+
+p <- ggplot(df.time, aes(x = Page, y = Time, color = Condition)) +
+  geom_boxplot() +
+  scale_color_manual(values = palette.4) +
+  ylim(0, 600)
+
+ggplotly(p) %>%
+  layout(boxmode = "group")
+```
+A few things:
+
+1. Students that take a Likert version, take longer (no surprise).
+
+2. Students spend more time on a page if its the first page they see. Students in the Likert-1 and None-1 conditions spend longer on Group 1's page than the conditions that saw Group 2 first. The same pattern holds for Group 2's page. This could suggest that when a contrasting case is available, students are able to progess quicker. Or it could just be that students are gaining familiarity with the assessment and moving faster. Although some students see Group 2 (cont.) second and some see it third and there seems to be no difference in the time it takes students to complete this item regardless lending support to the first hypothesis.
+
+3. Students that don't see Likert items throughout take a little longer to complete the comparison questions, probably because this is the first time they are explicitly evaluating specific details of the experiments.
+
+```{r, eval = FALSE}
+df.time <- df.time %>% 
+  mutate(Likert = 1 * grepl('Likert', df.time$Condition),
+         G2.First = 1 * grepl('2', df.time$Condition))
+mod <- lmer(Time ~ (Likert + G2.First) * Page + (1 | id), df.time)
+summary(mod)
+plot(mod)
+```
+
+```{r, eval = FALSE}
+df.time <- df.time %>%
+  mutate(Submit = 1)
+
+mod <- coxph(Surv(Time, Submit) ~ (Likert + G2.First) * Page, df.time)
+summary(mod)
+
+ggsurvplot(survfit(mod, data = df.time))
+
+unique(df.time[, c('Likert', 'G2.First', 'Page')]) 
+      
+survfit(mod, newdata = unique(df.time[, c('Likert', 'G2.First', 'Page')]))
+
+plot(survfit(mod, newdata = unique(df.time[, c('Likert', 'G2.First', 'Page')])), xlim = c(0, 600), conf.int = FALSE)
+p$data.survplot
+```
+
 
